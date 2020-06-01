@@ -6,6 +6,7 @@ Author
 Aku Rouhe 2020
 """
 import itertools
+import collections
 
 
 # The following functions are essentially copying the NLTK ngram counting
@@ -64,8 +65,6 @@ def ngrams(sequence, n):
     """
     Produce all Nth order N-grams from the sequence.
 
-    This will generally be used in an N-gram counting pipeline.
-
     Arguments
     ---------
     sequence : iterator
@@ -106,6 +105,69 @@ def ngrams(sequence, n):
         yield tuple(history) + (token,)
         history.append(token)
         del history[0]
+    return
+
+
+def allgrams(sequence, max_n, skip_first_unigram=True):
+    """
+    Produce all N-grams upto N-th order from the sequence.
+
+    This will generally be used in an N-gram counting pipeline.
+
+    Arguments
+    ---------
+    sequence : iterator
+        The sequence from which to produce N-grams.
+    max_n : int
+        The maximum order of N-grams to produce
+    skip_first_unigram : bool
+        Whether produce the first token in the sequence as a unigram or not.
+        Basically, with this True, the sentence start can be avoided in
+        unigrams.
+
+    Yields
+    ------
+    int
+        Order of the ngram
+    tuple
+        Ngram as a tuple.
+
+    Example
+    -------
+    >>> for order, ngram in allgrams("Brain", 3):
+    ...     print(order, ngram)
+    1 ('B',)
+    1 ('r',)
+    2 ('B', 'r')
+    1 ('a',)
+    2 ('r', 'a')
+    3 ('B', 'r', 'a')
+    1 ('i',)
+    2 ('a', 'i')
+    3 ('r', 'a', 'i')
+    1 ('n',)
+    2 ('i', 'n')
+    3 ('a', 'i', 'n')
+
+    """
+    if max_n <= 0:
+        raise ValueError("Max N must be >=1")
+    # Handle the unigram case specially:
+    if max_n == 1:
+        for token in sequence:
+            yield (token,)
+        return
+    iterator = iter(sequence)
+    history = []
+    if skip_first_unigram:
+        history.append(next(iterator))
+    for token in iterator:
+        history.append(token)
+        if len(history) > max_n:
+            del history[0]
+        max_order = len(history)
+        for order in range(1, max_order + 1):
+            yield order, tuple(history[max_order - order :])
     return
 
 
@@ -161,3 +223,17 @@ def ngrams_for_evaluation(sequence, max_n, predict_first=False):
         yield token, tuple(history)
         history.append(token)
     return
+
+
+def count_ngrams(data, max_n, skip_first_unigram=True):
+    """
+    Produces N-gram counts from a list of sentences.
+
+    """
+    ngrams_by_order = {}
+    for order in range(1, max_n + 1):
+        ngrams_by_order[order] = collections.Counter()
+    for sentence in data:
+        for order, ngram in allgrams(sentence, max_n, skip_first_unigram):
+            ngrams_by_order[order][ngram] += 1
+    return ngrams_by_order
