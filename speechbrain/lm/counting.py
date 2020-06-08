@@ -225,15 +225,25 @@ def ngrams_for_evaluation(sequence, max_n, predict_first=False):
     return
 
 
-def count_ngrams(data, max_n, skip_first_unigram=True):
+def basic_tokenizer(line):
+    return line.strip().split()
+
+
+def basic_ngram_pipeline(data, max_n, tokenizer=basic_tokenizer):
+    tokenized = (tokenizer(line) for line in data)
+    padded = (pad_ends(sent) for sent in tokenized)
+    grams = itertools.chain.from_iterable(
+        (allgrams(sent, max_n, skip_first_unigram=True) for sent in padded)
+    )
+    return grams
+
+
+def count_ngrams(ngram_pipeline):
     """
     Produces N-gram counts from a list of sentences.
 
     """
-    ngrams_by_order = {}
-    for order in range(1, max_n + 1):
-        ngrams_by_order[order] = collections.Counter()
-    for sentence in data:
-        for order, ngram in allgrams(sentence, max_n, skip_first_unigram):
-            ngrams_by_order[order][ngram] += 1
-    return ngrams_by_order
+    ngrams_by_order = collections.defaultdict(collections.Counter)
+    for order, ngram in ngram_pipeline:
+        ngrams_by_order[order][ngram] += 1
+    return dict(ngrams_by_order)
