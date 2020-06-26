@@ -80,7 +80,14 @@ def _pylogsumexp(*args):
     return a_prime + math.log(sum(math.exp(a - a_prime) for a in args))
 
 
-def get_interpolated_probs(counts, lower_counts, discounts_to_apply, interp_lm):
+def get_counts_and_sums(counts):
+    pass
+    # in_order = sorted(counts.keys())
+    # def sums():
+    #    pass
+
+
+def get_interpolated_probs(counts, discounts_to_apply, interp_lm):
     probs = collections.defaultdict(dict)
     gammas = {}
     for ngram, count in counts.items():
@@ -88,7 +95,8 @@ def get_interpolated_probs(counts, lower_counts, discounts_to_apply, interp_lm):
         discount = discounts_to_apply[context][token]
         # Log domain:
         numerator = math.log(counts[ngram] - discount)
-        denominator = math.log(lower_counts[context])
+        denominator = None
+        # denominator = math.log(lower_counts[context])
         if context not in gammas:
             gamma = (
                 math.log(sum(discounts_to_apply[context].values()))

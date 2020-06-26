@@ -246,3 +246,12 @@ def count_ngrams(ngram_pipeline):
     for order, ngram in ngram_pipeline:
         ngrams_by_order[order][ngram] += 1
     return dict(ngrams_by_order)
+
+
+def count_ngrams_by_context(ngram_pipeline):
+    ngrams_by_order = collections.defaultdict(
+        lambda: collections.defaultdict(collections.Counter)
+    )
+    for order, (*context, token) in ngram_pipeline:
+        ngrams_by_order[order][tuple(context)][token] += 1
+    return dict(ngrams_by_order)
