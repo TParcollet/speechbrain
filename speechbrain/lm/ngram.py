@@ -5,8 +5,7 @@ Authors
  * Aku Rouhe 2020
 """
 import collections
-
-NEGINFINITY = float("-inf")
+from speechbrain.utils.lm import EXP, NEGINFINITY
 
 
 class BackoffNgramLM:
@@ -104,6 +103,24 @@ class BackoffNgramLM:
         lp = self.logprob(token, context[1:])
         return lp + backoff_log_weight
 
+    def validate_distribution(self, vocab, context=tuple()):
+        """
+        Implementation tip, from Goodman and Chen:
+            "[W]e added an option to the program that would compute the
+            probability of all words, not just the words in the test data. We
+            then verified that the sum of the probabilities of all words was
+            within roundoff error (10^-9) of 1."
+        """
+        tolerance = 10 ** -3
+        total_prob = 0.0  # NOT LOG DOMAIN
+        for token in vocab:
+            total_prob += EXP(self.logprob(token, context))
+        if abs(1.0 - total_prob) > tolerance:
+            raise ValueError(
+                f"Distribution is invalid for context {context}. "
+                f"Total probability {total_prob}"
+            )
+
 
 def ngram_evaluation_details(data, LM):
     """
@@ -197,3 +214,9 @@ def ngram_perplexity(eval_details, logbase=10.0):
     exponent = counter["neglogprob"] / counter["num_tokens"]
     perplexity = logbase ** exponent
     return perplexity
+
+
+def validate_contexts(data, LM, vocab):
+    for sentence in data:
+        for token, context in sentence:
+            LM.validate_distribution(vocab, context)

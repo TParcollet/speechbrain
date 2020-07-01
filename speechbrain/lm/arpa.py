@@ -227,3 +227,44 @@ def _parse_order(line):
 
 def _ends_arpa(line):
     return line == "\\end\\"
+
+
+def write_arpa(fstream, probs_by_order, backoffs_by_order):
+    num_ngrams = get_num_ngrams(probs_by_order)
+    _write_data_section(fstream, num_ngrams)
+    for order, probs_by_context in probs_by_order.items():
+        fstream.write("\n")
+        backoffs = backoffs_by_order.get(order, dict())
+        _write_ngrams_section(
+            fstream, order, probs_by_context, backoffs,
+        )
+    fstream.write("\n")
+    fstream.write("\\end\\\n")
+
+
+def get_num_ngrams(probs_by_order):
+    num_ngrams = collections.Counter()
+    for order, probs_by_context in probs_by_order.items():
+        for context, probs in probs_by_context.items():
+            num_ngrams[order] += len(probs)
+    return dict(num_ngrams)
+
+
+def _write_data_section(fstream, num_ngrams):
+    fstream.write("\\data\\\n")
+    for order, num in sorted(num_ngrams.items(), key=lambda tup: tup[0]):
+        fstream.write(f"ngram {order}={num}\n")
+
+
+def _write_ngrams_section(fstream, order, probs_by_context, backoffs):
+    fstream.write(f"\\{order}-grams:\n")
+    for context, probs in sorted(
+        probs_by_context.items(), key=lambda tup: tup[0]
+    ):
+        for token, prob in sorted(probs.items(), key=lambda tup: tup[0]):
+            ngram = context + (token,)
+            if ngram in backoffs:
+                backoff = backoffs[ngram]
+                fstream.write(f"{prob:}\t{' '.join(ngram)}\t{backoff}\n")
+            else:
+                fstream.write(f"{prob:}\t{' '.join(ngram)}\n")
