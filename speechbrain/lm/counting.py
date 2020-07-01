@@ -133,7 +133,7 @@ def allgrams(sequence, max_n, skip_first_unigram=True):
 
     Example
     -------
-    >>> for order, ngram in allgrams("Brain", 3):
+    >>> for order, ngram in allgrams("Brain", 3, skip_first_unigram=False):
     ...     print(order, ngram)
     1 ('B',)
     1 ('r',)
