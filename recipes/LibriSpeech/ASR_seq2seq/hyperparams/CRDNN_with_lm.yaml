@@ -19,7 +19,7 @@ number_of_ctc_epochs: 10
 batch_size: 8
 lr: 1.0
 ctc_weight: 0.5
-lm_weight: 0.2
+lm_weight: 0.1
 device: 'cuda:0'
 
 # Feature parameters
@@ -28,11 +28,11 @@ n_fft: 400
 n_mels: 40
 
 # LM Model parameters
-lm_rnn_layers: 2
+lm_rnn_layers: 1
 lm_rnn_neurons: 1024
 lm_dnn_neurons: 512
 lm_emb_size: 128
-lm_dropout: 0.5
+lm_dropout: 0.0
 
 # Functions
 lm_rnn: !new:speechbrain.nnet.RNN.LSTM
