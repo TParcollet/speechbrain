@@ -12,10 +12,10 @@ import re
 import csv
 import torch
 import psutil
-import random
 import pickle
 import logging
 import hashlib
+import random
 import numpy as np
 import soundfile as sf
 import multiprocessing as mp
@@ -120,6 +120,7 @@ class DataLoaderFactory(torch.nn.Module):
         select_n_sentences=None,
         avoid_if_longer_than=36000,
         avoid_if_shorter_than=0,
+        shuffle_batches=False,
         drop_last=False,
         padding_value=0,
         replacements={},
@@ -138,6 +139,7 @@ class DataLoaderFactory(torch.nn.Module):
         self.select_n_sentences = select_n_sentences
         self.avoid_if_longer_than = avoid_if_longer_than
         self.avoid_if_shorter_than = avoid_if_shorter_than
+        self.shuffle_batches = shuffle_batches
         self.drop_last = drop_last
         self.padding_value = padding_value
         self.replacements = replacements
@@ -147,7 +149,7 @@ class DataLoaderFactory(torch.nn.Module):
         self.supported_formats = self.get_supported_formats()
 
         # Shuffle the data every time if random is selected
-        if self.sentence_sorting == "random":
+        if self.sentence_sorting == "random" and not self.shuffle_batches:
             self.shuffle = True
         else:
             self.shuffle = False
@@ -178,15 +180,29 @@ class DataLoaderFactory(torch.nn.Module):
             self.cache_ram_percent,
         )
 
-        self.dataloader = DataLoader(
-            dataset,
-            batch_size=self.batch_size,
-            shuffle=self.shuffle,
-            pin_memory=False,
-            drop_last=self.drop_last,
-            num_workers=self.num_workers,
-            collate_fn=self.batch_creation,
-        )
+        if not self.shuffle_batches:
+            self.dataloader = DataLoader(
+                dataset,
+                batch_size=self.batch_size,
+                shuffle=self.shuffle,
+                pin_memory=False,
+                drop_last=self.drop_last,
+                num_workers=self.num_workers,
+                collate_fn=self.batch_creation,
+            )
+        else:
+            batch_sampler = ShuffleBatchSampler(
+                batch_size=self.batch_size,
+                data_len=self.data_len,
+                drop_last=self.drop_last,
+            )
+            self.dataloader = DataLoader(
+                dataset,
+                pin_memory=False,
+                num_workers=self.num_workers,
+                collate_fn=self.batch_creation,
+                batch_sampler=batch_sampler,
+            )
 
         return self.dataloader
 
@@ -2136,3 +2152,25 @@ def merge_char(sequences, space="_"):
         words = "".join(seq).split("_")
         results.append(words)
     return results
+
+
+class ShuffleBatchSampler:
+    def __init__(self, batch_size, data_len, drop_last):
+        self.batch_size = batch_size
+        self.data_len = data_len
+        self.drop_last = drop_last
+        self.mini_batches = [
+            list(range(i * batch_size, i * batch_size + batch_size))
+            for i in range(data_len // batch_size)
+        ]
+        if not drop_last and data_len % batch_size != 0:
+            self.mini_batches.append(
+                list(range(data_len - (data_len % batch_size), data_len))
+            )
+        random.shuffle(self.mini_batches)
+
+    def __iter__(self):
+        idx = 0
+        while idx < len(self.mini_batches):
+            yield self.mini_batches[idx]
+            idx += 1
