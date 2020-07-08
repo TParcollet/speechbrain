@@ -2169,8 +2169,8 @@ class ShuffleBatchSampler:
             )
         random.shuffle(self.mini_batches)
 
-    def __iter__(self):
-        idx = 0
-        while idx < len(self.mini_batches):
-            yield self.mini_batches[idx]
-            idx += 1
+    def __getitem__(self, idx):
+        return self.mini_batches[idx]
+
+    def __len__(self):
+        return len(self.mini_batches)
