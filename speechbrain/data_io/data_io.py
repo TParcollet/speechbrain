@@ -2187,34 +2187,34 @@ class LocalRandomSampler:
             self.chunks.append(
                 list(range(data_len - (data_len % chunk_size), data_len))
             )
-
-        self.shuffle()
-        if self.drop_last:
-            self.n_batches = len(self.chunks) * (
-                self.chunk_size // self.batch_size
-            )
-        else:
-            self.n_batches = math.ceil(self.data_len / self.batch_size)
+        self.batches = self.generate_batches()
 
     def __getitem__(self, idx):
-        if idx >= self.n_batches:
+        if idx >= len(self.batches):
             self.shuffle()
+            self.batches = self.generate_batches()
             raise IndexError
-        chunk_idx = idx * self.batch_size // self.chunk_size
-        chunk_offset = idx - chunk_idx * (self.chunk_size // self.batch_size)
-        indices = self.chunks[chunk_idx][
-            chunk_offset * self.batch_size : chunk_offset * self.batch_size
-            + self.batch_size
-        ]
-        return indices
+        return self.batches[idx]
 
     def __len__(self):
-        return self.n_batches
+        return len(self.batches)
 
     def shuffle(self):
         for i in range(len(self.chunks)):
             random.shuffle(self.chunks[i])
         return
+
+    def generate_batches(self):
+        batches = []
+        for chunk in self.chunks:
+            batches += [
+                chunk[
+                    i * self.batch_size : i * self.batch_size + self.batch_size
+                ]
+                for i in range(math.ceil(len(chunk) / self.batch_size))
+            ]
+        random.shuffle(batches)
+        return batches
 
 
 class ShuffleBatchSampler:
