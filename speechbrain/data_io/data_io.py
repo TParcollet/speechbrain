@@ -16,6 +16,7 @@ import pickle
 import logging
 import hashlib
 import random
+import math
 import numpy as np
 import soundfile as sf
 import multiprocessing as mp
@@ -121,6 +122,8 @@ class DataLoaderFactory(torch.nn.Module):
         avoid_if_longer_than=36000,
         avoid_if_shorter_than=0,
         shuffle_batches=False,
+        local_random=False,
+        chunk_size=2048,
         drop_last=False,
         padding_value=0,
         replacements={},
@@ -140,6 +143,8 @@ class DataLoaderFactory(torch.nn.Module):
         self.avoid_if_longer_than = avoid_if_longer_than
         self.avoid_if_shorter_than = avoid_if_shorter_than
         self.shuffle_batches = shuffle_batches
+        self.local_random = local_random
+        self.chunk_size = chunk_size
         self.drop_last = drop_last
         self.padding_value = padding_value
         self.replacements = replacements
@@ -179,18 +184,7 @@ class DataLoaderFactory(torch.nn.Module):
             self.cache,
             self.cache_ram_percent,
         )
-
-        if not self.shuffle_batches:
-            self.dataloader = DataLoader(
-                dataset,
-                batch_size=self.batch_size,
-                shuffle=self.shuffle,
-                pin_memory=False,
-                drop_last=self.drop_last,
-                num_workers=self.num_workers,
-                collate_fn=self.batch_creation,
-            )
-        else:
+        if self.shuffle_batches:
             batch_sampler = ShuffleBatchSampler(
                 batch_size=self.batch_size,
                 data_len=self.data_len,
@@ -202,6 +196,30 @@ class DataLoaderFactory(torch.nn.Module):
                 num_workers=self.num_workers,
                 collate_fn=self.batch_creation,
                 batch_sampler=batch_sampler,
+            )
+        elif self.local_random:
+            batch_sampler = LocalRandomSampler(
+                chunk_size=self.chunk_size,
+                batch_size=self.batch_size,
+                data_len=self.data_len,
+                drop_last=self.drop_last,
+            )
+            self.dataloader = DataLoader(
+                dataset,
+                pin_memory=False,
+                num_workers=self.num_workers,
+                collate_fn=self.batch_creation,
+                batch_sampler=batch_sampler,
+            )
+        else:
+            self.dataloader = DataLoader(
+                dataset,
+                batch_size=self.batch_size,
+                shuffle=self.shuffle,
+                pin_memory=False,
+                drop_last=self.drop_last,
+                num_workers=self.num_workers,
+                collate_fn=self.batch_creation,
             )
 
         return self.dataloader
@@ -2154,6 +2172,51 @@ def merge_char(sequences, space="_"):
     return results
 
 
+class LocalRandomSampler:
+    def __init__(self, chunk_size, batch_size, data_len, drop_last):
+        self.chunk_size = chunk_size
+        self.batch_size = batch_size
+        self.data_len = data_len
+        self.drop_last = drop_last
+
+        self.chunks = [
+            list(range(i * chunk_size, i * chunk_size + chunk_size))
+            for i in range(data_len // chunk_size)
+        ]
+        if not drop_last and data_len % chunk_size != 0:
+            self.chunks.append(
+                list(range(data_len - (data_len % chunk_size), data_len))
+            )
+
+        self.shuffle()
+        if self.drop_last:
+            self.n_batches = len(self.chunks) * (
+                self.chunk_size // self.batch_size
+            )
+        else:
+            self.n_batches = math.ceil(self.data_len / self.batch_size)
+
+    def __getitem__(self, idx):
+        if idx >= self.n_batches:
+            self.shuffle()
+            raise IndexError
+        chunk_idx = idx * self.batch_size // self.chunk_size
+        chunk_offset = idx - chunk_idx * (self.chunk_size // self.batch_size)
+        indices = self.chunks[chunk_idx][
+            chunk_offset * self.batch_size : chunk_offset * self.batch_size
+            + self.batch_size
+        ]
+        return indices
+
+    def __len__(self):
+        return self.n_batches
+
+    def shuffle(self):
+        for i in range(len(self.chunks)):
+            random.shuffle(self.chunks[i])
+        return
+
+
 class ShuffleBatchSampler:
     def __init__(self, batch_size, data_len, drop_last):
         self.batch_size = batch_size
@@ -2170,6 +2233,9 @@ class ShuffleBatchSampler:
         random.shuffle(self.mini_batches)
 
     def __getitem__(self, idx):
+        if idx >= len(self.mini_batches):
+            random.shuffle(self.mini_batches)
+            raise IndexError
         return self.mini_batches[idx]
 
     def __len__(self):
