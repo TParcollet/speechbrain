@@ -45,6 +45,8 @@ checkpointer = sb.utils.checkpoints.Checkpointer(
     },
 )
 
+steps = 0
+
 
 # Define training procedure
 class LM(sb.core.Brain):
@@ -56,7 +58,7 @@ class LM(sb.core.Brain):
         y_in = prepend_bos_token(chars, bos_index=params.bos_index)
         e_in = params.emb(y_in, init_params=init_params)
         e_in = params.drop(e_in)
-        h_rnn, _ = params.rnn(e_in, init_params=init_params)
+        h_rnn = params.rnn(e_in, init_params=init_params)
         h_dnn = F.relu(params.dnn(h_rnn, init_params=init_params))
         logits = params.lin(h_dnn, init_params)
         pout = params.log_softmax(logits)
@@ -84,9 +86,13 @@ class LM(sb.core.Brain):
         inputs = batch[0]
         predictions = self.compute_forward(inputs)
         loss, stats = self.compute_objectives(predictions, inputs)
-        loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
+        (loss / params.accu_steps).backward()
+        global steps
+        steps += 1
+        if steps % params.accu_steps == 0:
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            steps = 0
         stats["loss"] = loss.detach()
         return stats
 
@@ -114,16 +120,17 @@ class LM(sb.core.Brain):
 # Prepare data
 prepare_librispeech(
     data_folder=params.data_folder,
-    splits=["train-clean-100", "dev-clean", "dev-clean"],
+    splits=["dev-clean", "dev-clean"],
     save_folder=params.data_folder,
 )
 prepare_librispeech_lm_corpus(
     data_folder=params.data_folder,
     save_folder=params.data_folder,
-    csv_filename="lm_corpus.csv",
+    filename=params.filename,
+    data_format=params.data_format,
+    select_n_sentences=100000,
 )
 
-pair_set = params.pair_loader()
 train_set = params.train_loader()
 valid_set = params.valid_loader()
 first_y = next(iter(train_set))

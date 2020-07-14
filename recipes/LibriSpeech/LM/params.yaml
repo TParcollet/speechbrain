@@ -7,19 +7,22 @@ train_log: !ref <output_folder>/train_log.txt
 
 # Data files
 data_folder: !PLACEHOLDER  # e.g. /path/to/librispeech
-csv_pair: !ref <data_folder>/train-clean-100.csv
-csv_train: !ref <data_folder>/lm_corpus.csv
+filename: lm_corpus.h5
+data_format: hdf5
+label_dict_file: ../ASR_seq2seq/results/rnn_cell/1234/label_dict.pkl
+hdf5_train: !ref <data_folder>/<filename>
 csv_valid: !ref <data_folder>/dev-clean.csv
 
 # Training parameters
 number_of_epochs: 20
-batch_size: 16
+batch_size: 32
 lr: 0.001
+accu_steps: 8
 device: 'cuda:0'
 
 # Model parameters
-rnn_layers: 4
-rnn_neurons: 2048
+rnn_layers: 1
+rnn_neurons: 1024
 dnn_neurons: 512
 emb_size: 128
 dropout: 0.1
@@ -36,7 +39,7 @@ rnn: !new:speechbrain.nnet.RNN.LSTM
     dropout: !ref <dropout>
     bidirectional: False
     re_init: True
-    return_hidden: True
+    return_hidden: False
 
 emb: !new:speechbrain.nnet.embedding.Embedding
     num_embeddings: !ref <output_neurons>
@@ -65,20 +68,17 @@ lr_annealing: !new:speechbrain.nnet.lr_schedulers.NewBobLRScheduler
 epoch_counter: !new:speechbrain.utils.epoch_loop.EpochCounter
     limit: !ref <number_of_epochs>
 
-# initialize this first to create the same label_dict
-pair_loader: !new:speechbrain.data_io.data_io.DataLoaderFactory
-    csv_file: !ref <csv_pair>
+train_loader: !new:speechbrain.data_io.data_io.HDF5DataLoaderFactory
+    hdf5_file: !ref <hdf5_train>
+    label_dict_file: !ref <label_dict_file>
     batch_size: !ref <batch_size>
     sentence_sorting: ascending
     output_folder: !ref <output_folder>
-    csv_read: [char]
+    data_entries: [char]
+    sort_by: char
+    local_random: True
+    chunk_size: 32768
 
-train_loader: !new:speechbrain.data_io.data_io.DataLoaderFactory
-    csv_file: !ref <csv_train>
-    batch_size: !ref <batch_size>
-    sentence_sorting: ascending
-    output_folder: !ref <output_folder>
-    csv_read: [char]
 
 valid_loader: !new:speechbrain.data_io.data_io.DataLoaderFactory
     csv_file: !ref <csv_valid>
