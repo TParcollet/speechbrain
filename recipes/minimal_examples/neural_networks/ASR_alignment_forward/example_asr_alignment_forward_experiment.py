@@ -2,13 +2,19 @@
 import os
 import speechbrain as sb
 from speechbrain.utils.train_logger import summarize_average
+from speechbrain.core import create_experiment_directory
 
-experiment_dir = os.path.dirname(os.path.realpath(__file__))
-hyperparams_file = os.path.join(experiment_dir, "hyperparams.yaml")
+script_dir = os.path.dirname(os.path.realpath(__file__))
+experiment_dir = os.path.join(script_dir, "results")
+hyperparams_file = os.path.join(script_dir, "hyperparams.yaml")
 data_folder = "../../../../samples/audio_samples/nn_training_samples"
-data_folder = os.path.realpath(os.path.join(experiment_dir, data_folder))
+data_folder = os.path.realpath(os.path.join(script_dir, data_folder))
 with open(hyperparams_file) as fin:
-    hyperparams = sb.yaml.load_extended_yaml(fin, {"data_folder": data_folder})
+    hyperparams = sb.yaml.load_extended_yaml(
+        fin, {"data_folder": data_folder, "output_folder": experiment_dir}
+    )
+
+create_experiment_directory(hyperparams.output_folder)
 
 
 class AlignBrain(sb.core.Brain):
@@ -38,6 +44,7 @@ class AlignBrain(sb.core.Brain):
             viterbi_scores, alignments = hyperparams.aligner(
                 predictions, lens, phns, phn_lens, "viterbi"
             )
+            hyperparams.aligner.store_alignments(ids, alignments)
 
         return loss, stats
 
@@ -45,6 +52,7 @@ class AlignBrain(sb.core.Brain):
         print("Epoch %d complete" % epoch)
         print("Train loss: %.2f" % summarize_average(train_stats["loss"]))
         print("Valid loss: %.2f" % summarize_average(valid_stats["loss"]))
+        hyperparams.checkpointer.save_and_keep_only()
 
 
 train_set = hyperparams.train_loader()
@@ -54,8 +62,10 @@ align_brain = AlignBrain(
     optimizer=hyperparams.optimizer,
     first_inputs=[first_x],
 )
+
+hyperparams.checkpointer.recover_if_possible()
 align_brain.fit(
-    range(hyperparams.N_epochs), train_set, hyperparams.valid_loader()
+    hyperparams.epoch_counter, train_set, hyperparams.valid_loader()
 )
 test_stats = align_brain.evaluate(hyperparams.test_loader())
 

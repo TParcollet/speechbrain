@@ -5,9 +5,11 @@ __set_seed: !!python/object/apply:torch.manual_seed [!ref <seed>]
 
 # Data files
 data_folder: !PLACEHOLDER
+output_folder: !PLACEHOLDER
 csv_train: !ref <data_folder>/train.csv
 csv_valid: !ref <data_folder>/dev.csv
 csv_test: !ref <data_folder>/test.csv
+save_folder: !ref <output_folder>/save
 
 # Neural Parameters
 N_epochs: 10
@@ -49,6 +51,9 @@ test_loader: !new:speechbrain.data_io.data_io.DataLoaderFactory
     replacements:
         $data_folder: !ref <data_folder>
 
+epoch_counter: !new:speechbrain.utils.epoch_loop.EpochCounter
+    limit: !ref <N_epochs>
+
 compute_features: !new:speechbrain.lobes.features.mfcc.MFCC
 
 mean_var_norm: !new:speechbrain.processing.features.InputNormalization
@@ -80,3 +85,13 @@ compute_cost: !name:speechbrain.nnet.losses.nll_loss
 
 optimizer: !new:speechbrain.nnet.optimizers.Adam_Optimizer
     learning_rate: !ref <lr>
+
+checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
+    checkpoints_dir: !ref <save_folder>
+    recoverables:
+        model: !ref <model>
+        lin: !ref <lin>
+        optimizer: !ref <optimizer>
+        normalizer: !ref <mean_var_norm>
+        counter: !ref <epoch_counter>
+        aligner: !ref <aligner>
