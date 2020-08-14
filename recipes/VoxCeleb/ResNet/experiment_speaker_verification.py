@@ -43,24 +43,23 @@ test_set = params.test_loader()
 index2label = params.test_loader.label_dict["lab_verification"]["index2lab"]
 
 
-# Definition of the steps for xvector computation from the waveforms
-def compute_x_vectors(wavs, lens, init_params=False):
+# Definition of the steps for resnet computation from the waveforms
+def compute_embedding(wavs, lens, init_params=False):
     with torch.no_grad():
         wavs = wavs.to(params.device)
         feats = params.compute_features(wavs, init_params=init_params)
         feats = params.mean_var_norm(feats, lens)
-        x_vect = params.xvector_model(feats, lens=lens, init_params=init_params)
-        x_vect = params.mean_var_norm_xvect(
-            x_vect, torch.ones(x_vect.shape[0]).to("cuda:0")
-        )
-    return x_vect
+        feats = feats.unsqueeze(1)
+        emb = params.resnet_model(feats, init_params=init_params)
+        # normalization after embedding?
+    return emb
 
 
 # Function for pre-trained model downloads
 def download_and_pretrain():
-    save_model_path = params.output_folder + "/save/xvect.ckpt"
-    download_file(params.xvector_file, save_model_path)
-    params.xvector_model.load_state_dict(
+    save_model_path = params.output_folder + "/save/resnet.ckpt"
+    download_file(params.resnet_file, save_model_path)
+    params.resnet_model.load_state_dict(
         torch.load(save_model_path), strict=True
     )
 
@@ -79,29 +78,23 @@ with tqdm(test_set, dynamic_ncols=True) as t:
 
         # Initialize the model and perform pre-training
         if init_params:
-            xvect1 = compute_x_vectors(wav1, lens1, init_params=True)
-            params.mean_var_norm_xvect.glob_mean = torch.zeros_like(
-                xvect1[0, 0, :]
-            )
-            params.mean_var_norm_xvect.count = 0
-
             # Download models from the web if needed
-            if "https://" in params.xvector_file:
+            if "https://" in params.resnet_file:
                 download_and_pretrain()
             else:
-                params.xvector_model.load_state_dict(
-                    torch.load(params.xvector_file), strict=True
+                params.resnet_model.load_state_dict(
+                    torch.load(params.resnet_file), strict=True
                 )
 
             init_params = False
-            params.xvector_model.eval()
+            params.resnet_model.eval()
 
-        # Enrolment and test xvectors
-        xvect1 = compute_x_vectors(wav1, lens1)
-        xvect2 = compute_x_vectors(wav2, lens2)
+        # Enrolment and test resnets
+        emb1 = compute_embedding(wav1, lens1)
+        emb2 = compute_embedding(wav2, lens2)
 
         # Computing similarity
-        score = similarity(xvect1, xvect2)
+        score = similarity(emb1, emb2)
 
         # Adding score to positive or negative lists
         for i in range(len(label_verification)):

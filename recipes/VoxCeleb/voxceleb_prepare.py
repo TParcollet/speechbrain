@@ -9,7 +9,8 @@ import csv
 import logging
 import glob
 import random
-import shutil
+import sys  # noqa F401
+import numpy as np
 
 from speechbrain.data_io.data_io import (
     read_wav_soundfile,
@@ -23,10 +24,7 @@ TRAIN_CSV = "train.csv"
 DEV_CSV = "dev.csv"
 TEST_CSV = "test.csv"
 SAMPLERATE = 16000
-
-DEV_WAV = "vox1_dev_wav.zip"
-TEST_WAV = "vox1_test_wav.zip"
-META = "meta"
+random.seed(1234)
 
 
 def prepare_voxceleb(
@@ -37,8 +35,6 @@ def prepare_voxceleb(
     seg_dur=300,
     vad=False,
     rand_seed=1234,
-    source=None,
-    split_speaker=False,
 ):
     """
     Prepares the csv files for the Voxceleb1 dataset.
@@ -60,10 +56,6 @@ def prepare_voxceleb(
         To perform VAD or not
     rand_seed : int
         random seed
-    source : str
-        Path to the folder where the VoxCeleb dataset source is stored.
-    split_speaker : bool
-        Speaker-wise split
 
     Example
     -------
@@ -83,7 +75,6 @@ def prepare_voxceleb(
         "save_folder": save_folder,
         "vad": vad,
         "seg_dur": seg_dur,
-        "split_speaker": split_speaker,
     }
 
     if not os.path.exists(save_folder):
@@ -93,21 +84,7 @@ def prepare_voxceleb(
     save_opt = os.path.join(save_folder, OPT_FILE)
     save_csv_train = os.path.join(save_folder, TRAIN_CSV)
     save_csv_dev = os.path.join(save_folder, DEV_CSV)
-    save_csv_test = os.path.join(save_folder, TEST_CSV)
-
-    # Create the data folder contains VoxCeleb data from the source
-    if source is not None:
-        if not os.path.exists(os.path.join(data_folder, "wav", "id10001")):
-            print(f"Extracting {source}/{DEV_WAV} to {data_folder}")
-            shutil.unpack_archive(os.path.join(source, DEV_WAV), data_folder)
-        if not os.path.exists(os.path.join(data_folder, "wav", "id10270")):
-            print(f"Extracting {source}/{TEST_WAV} to {data_folder}")
-            shutil.unpack_archive(os.path.join(source, TEST_WAV), data_folder)
-        if not os.path.exists(os.path.join(data_folder, "meta")):
-            print(f"Copying {source}/meta to {data_folder}")
-            shutil.copytree(
-                os.path.join(source, "meta"), os.path.join(data_folder, "meta")
-            )
+    # save_csv_test = os.path.join(save_folder, TEST_CSV)
 
     # Check if this phase is already done (if so, skip it)
     if skip(splits, save_folder, conf):
@@ -126,9 +103,7 @@ def prepare_voxceleb(
     logger.debug(msg)
 
     # Split data into 90% train and 10% validation (verification split)
-    wav_lst_train, wav_lst_dev = _get_utt_split_lists(
-        data_folder, split_ratio, split_speaker
-    )
+    wav_lst_train, wav_lst_dev = _get_utt_split_lists(data_folder, split_ratio)
 
     # Creating csv file for training data
     if "train" in splits:
@@ -142,8 +117,11 @@ def prepare_voxceleb(
         )
 
     # Test can be used for verification
+    # if "enrol" in splits:
+    #    prepare_csv_enrol_test(data_folder, save_csv_enrol, 'enrol')
+
     if "test" in splits:
-        prepare_csv_test(data_folder, save_csv_test)
+        prepare_csv_enrol_test(data_folder, save_folder)
 
     # Saving options (useful to skip this phase when already done)
     save_pkl(conf, save_opt)
@@ -151,7 +129,7 @@ def prepare_voxceleb(
 
 def skip(splits, save_folder, conf):
     """
-    Detects if the voxceleb data_preparation has been already done.
+    Detects if the timit data_preparation has been already done.
     If the preparation has been done, we can skip it.
 
     Returns
@@ -171,6 +149,7 @@ def skip(splits, save_folder, conf):
     for split in splits:
         if not os.path.isfile(os.path.join(save_folder, split_files[split])):
             skip = False
+
     #  Checking saved options
     save_opt = os.path.join(save_folder, OPT_FILE)
     if skip is True:
@@ -230,7 +209,7 @@ def _check_voxceleb1_folders(data_folders, splits):
 
 
 # Used for verification split
-def _get_utt_split_lists(data_folders, split_ratio, split_speaker=False):
+def _get_utt_split_lists(data_folders, split_ratio):
     """
     Tot. number of speakers = 1211.
     Splits the audio file list into train and dev.
@@ -250,38 +229,21 @@ def _get_utt_split_lists(data_folders, split_ratio, split_speaker=False):
 
         test_spks = [snt.split("/")[0] for snt in test_lst]
 
+        # avoid test speakers for train and dev splits
+        audio_files_list = []
         path = os.path.join(data_folder, "wav", "**", "*.wav")
-        if split_speaker:
-            # avoid test speakers for train and dev splits
-            audio_files_dict = {}
-            for f in glob.glob(path, recursive=True):
-                spk_id = f.split("/wav/")[1].split("/")[0]
-                if spk_id not in test_spks:
-                    audio_files_dict.setdefault(spk_id, []).append(f)
+        for f in glob.glob(path, recursive=True):
+            spk_id = f.split("/wav/")[1].split("/")[0]
+            if spk_id not in test_spks:
+                audio_files_list.append(f)
 
-            spk_id_list = list(audio_files_dict.keys())
-            random.shuffle(spk_id_list)
-            split = int(0.01 * split_ratio[0] * len(spk_id_list))
-            for spk_id in spk_id_list[:split]:
-                train_lst.extend(audio_files_dict[spk_id])
+        random.shuffle(audio_files_list)
+        split = int(0.01 * split_ratio[0] * len(audio_files_list))
+        train_snts = audio_files_list[:split]
+        dev_snts = audio_files_list[split:]
 
-            for spk_id in spk_id_list[split:]:
-                dev_lst.extend(audio_files_dict[spk_id])
-        else:
-            # avoid test speakers for train and dev splits
-            audio_files_list = []
-            for f in glob.glob(path, recursive=True):
-                spk_id = f.split("/wav/")[1].split("/")[0]
-                if spk_id not in test_spks:
-                    audio_files_list.append(f)
-
-            random.shuffle(audio_files_list)
-            split = int(0.01 * split_ratio[0] * len(audio_files_list))
-            train_snts = audio_files_list[:split]
-            dev_snts = audio_files_list[split:]
-
-            train_lst.extend(train_snts)
-            dev_lst.extend(dev_snts)
+        train_lst.extend(train_snts)
+        dev_lst.extend(dev_snts)
 
     return train_lst, dev_lst
 
@@ -391,6 +353,110 @@ def prepare_csv(
     # Final prints
     msg = "\t%s Sucessfully created!" % (csv_file)
     logger.debug(msg)
+
+
+def prepare_csv_enrol_test(data_folders, save_folder):
+    """
+    Creates the csv file for test data (useful for verification)
+
+    Arguments
+    ---------
+    data_folder : str
+        Path of the data folders
+    csv_file : str
+        The path of the output csv file
+    enrol_or_test : str
+        enrol or test option
+
+    Returns
+    -------
+    None
+    """
+
+    # msg = '\t"Creating csv lists in  %s..."' % (csv_file)
+    # logger.debug(msg)
+
+    csv_output_head = [
+        ["ID", "duration", "wav", "wav_format", "wav_opts"]
+    ]  # noqa E231
+
+    for data_folder in data_folders:
+
+        test_lst_file = os.path.join(data_folder, "meta", "veri_test.txt")
+
+        enrol_ids, test_ids = [], []
+
+        # Get unique ids (enrol and test utterances)
+        for line in open(test_lst_file):
+            e_id = line.split(" ")[1].rstrip().split(".")[0].strip()
+            t_id = line.split(" ")[2].rstrip().split(".")[0].strip()
+            enrol_ids.append(e_id)
+            test_ids.append(t_id)
+
+        enrol_ids = list(np.unique(np.array(enrol_ids)))
+        test_ids = list(np.unique(np.array(test_ids)))
+
+        # Prepare enrol csv
+        logger.debug("preparing enrol csv")
+        enrol_csv = []
+        for id in enrol_ids:
+            wav = data_folder + "/wav/" + id + ".wav"
+
+            # Reading the signal (to retrieve duration in seconds)
+            signal = read_wav_soundfile(wav)
+            audio_duration = signal.shape[0] / SAMPLERATE
+
+            csv_line = [
+                id,
+                audio_duration,
+                wav,
+                "wav",
+                "",
+            ]
+
+            enrol_csv.append(csv_line)
+
+        csv_output = csv_output_head + enrol_csv
+        csv_file = save_folder + "enrol.csv"
+
+        # Writing the csv lines
+        with open(csv_file, mode="w") as csv_f:
+            csv_writer = csv.writer(
+                csv_f, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL
+            )
+            for line in csv_output:
+                csv_writer.writerow(line)
+
+        # Prepare test csv
+        logger.debug("preparing test csv")
+        test_csv = []
+        for id in test_ids:
+            wav = data_folder + "/wav/" + id + ".wav"
+
+            # Reading the signal (to retrieve duration in seconds)
+            signal = read_wav_soundfile(wav)
+            audio_duration = signal.shape[0] / SAMPLERATE
+
+            csv_line = [
+                id,
+                audio_duration,
+                wav,
+                "wav",
+                "",
+            ]
+
+            test_csv.append(csv_line)
+
+        csv_output = csv_output_head + test_csv
+        csv_file = save_folder + "test.csv"
+
+        # Writing the csv lines
+        with open(csv_file, mode="w") as csv_f:
+            csv_writer = csv.writer(
+                csv_f, delimiter=",", quotechar='"', quoting=csv.QUOTE_MINIMAL
+            )
+            for line in csv_output:
+                csv_writer.writerow(line)
 
 
 def prepare_csv_test(data_folders, csv_file):
