@@ -369,3 +369,40 @@ class InstanceNorm2d(nn.Module):
         x_n = x_n.transpose(1, -1)
 
         return x_n
+
+
+class LpNorm(nn.Module):
+    """A wrapper class for torch.nn.functional.normalize
+
+    Arguments
+    ---------
+    p : float
+        Default: 2, The exponent value in the norm formulation.
+    eps : float
+        This value is added to std deviation estimationto improve the numerical
+        stability.
+    dim : int
+        Default : 2, The dimension to reduce
+
+    Example
+    -------
+    >>> input = torch.randn(100, 10, 20)
+    >>> norm = InstanceNorm1d()
+    >>> output = norm(input, init_params=True)
+    >>> output.shape
+    torch.Size([100, 10, 20])
+    """
+
+    def __init__(self, p=2, dim=2, eps=1e-12):
+        super().__init__()
+        self.norm = lambda x: nn.functional.normalize(x, p, dim, eps)
+
+    def forward(self, x, init_params=False):
+        """Returns the normalized input tensor.
+
+        Arguments
+        ---------
+        x : torch.Tensor (batch, time, channels)
+            input to normalize. 3d tensors are expected.
+        """
+        return self.norm(x)

@@ -66,11 +66,12 @@ class ResNetBrain(sb.core.Brain):
 
         # Feature extraction and normalization
         feats = params.compute_features(wavs, init_params)
-        feats = params.mean_var_norm(feats, lens)
+        feats = params.input_norm(feats, init_params)
 
         # ResNet
         feats = feats.unsqueeze(1)
         spk_emb = params.resnet_model(feats, init_params=init_params)
+        spk_emb = params.output_norm(spk_emb, init_params)
 
         return spk_emb, lens
 
@@ -115,7 +116,7 @@ train_loader = params.train_loader
 valid_loader = params.valid_loader
 
 # ResNet Model
-modules = [params.resnet_model, params.meta_loss]
+modules = [params.input_norm, params.resnet_model, params.meta_loss]
 first_x, first_y = next(iter(train_loader()))
 if hasattr(params, "augmentation"):
     modules.append(params.augmentation)

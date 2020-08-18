@@ -8,8 +8,8 @@ __set_seed: !!python/object/apply:torch.manual_seed [!ref <seed>]
 
 # Folders and train_log file
 voxceleb_source: /network/datasets/restricted/voxceleb_users/voxceleb/voxceleb1
-data_folder: /localscratch/voxceleb1
-output_folder: results/preact-18-mlc
+data_folder: voxceleb1
+output_folder: results/speech-resnet-34-ml
 save_folder: !ref <output_folder>/save/
 train_log: !ref <output_folder>/train_log.txt
 
@@ -20,9 +20,8 @@ csv_valid: !ref <save_folder>/dev.csv
 # Training hyperparameters
 number_of_epochs: 100
 batch_size: 512 # 256-way
-group_size: 2   # support_size + query_size
-query_size: 1
-num_corrupts: 1 # group_size *= 2
+group_size: 4   # support_size + query_size
+query_size: 3
 lr: 0.001
 lr_final: 0.0001
 device: 'cuda:0'
@@ -33,7 +32,7 @@ eval_query_size: 1
 eval_group_size: 2
 
 # Feature parameters
-n_mels: 24
+n_mels: 40
 left_frames: 0
 right_frames: 0
 deltas: False
@@ -45,7 +44,7 @@ compute_features: !new:speechbrain.lobes.features.fbank.Fbank
     right_frames: !ref <right_frames>
     deltas: !ref <deltas>
 
-resnet_model: !new:speechbrain.lobes.models.ResNet.PreAct18
+resnet_model: !new:speechbrain.lobes.models.SpeechResNet.ResNet34
     device: !ref <device>
     in_channels: 1
     lin_neurons: 512
@@ -89,8 +88,9 @@ valid_loader: !new:speechbrain.data_io.data_io.DataLoaderFactory
         $data_folder: !ref <data_folder>
     output_folder: !ref <output_folder>/save/
 
-mean_var_norm: !new:speechbrain.processing.features.InputNormalization
-    norm_type: global
+input_norm: !new:speechbrain.nnet.normalization.InstanceNorm1d
+
+output_norm: !new:speechbrain.nnet.normalization.LpNorm
 
 meta_loss: !new:speechbrain.nnet.losses.ScaledCosineSimiarity
     device: !ref <device>
@@ -119,5 +119,6 @@ checkpointer: !new:speechbrain.utils.checkpoints.Checkpointer
         resnet_model: !ref <resnet_model>
         meta_loss: !ref <meta_loss>
         optimizer: !ref <optimizer>
-        normalizer: !ref <mean_var_norm>
+        input_norm: !ref <input_norm>
+        output_norm: !ref <output_norm>
         counter: !ref <epoch_counter>
