@@ -4,10 +4,12 @@ Losses for training neural networks.
 Authors
  * Mirco Ravanelli 2020
  * Samuele Cornell 2020
+ * Hwidong Na 2020
 """
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 import logging
 import functools
 from speechbrain.data_io.data_io import length_to_mask
@@ -489,3 +491,256 @@ def compute_masked_loss(
             torch.mean(predictions, dim=1) * mask
         ) / torch.sum(mask)
         return label_smoothing * loss_reg + (1 - label_smoothing) * loss
+
+
+class Projection(torch.nn.Module):
+    """This class implements a projection on the top of network outputs.
+
+    Arguments
+    ---------
+    inp_neurons : int
+        Number of neurons in the network output
+    activation : torch class
+        A class for constructing the activation layers.
+    lin_blocks : int
+        Number of linear layers.
+    lin_neurons : int
+        Number of neurons in linear layers.
+    out_neurons : int
+        Number of neurons in final layer
+
+    Example
+    -------
+    >>> outputs = torch.tensor([ [1., 0.], [0., 1.], [-1., 0.], [0., -1.] ])
+    >>> projection = Projection(inp_neurons=2, out_neurons=1)
+    >>> logits = projection(outputs)
+    >>> logits.shape
+    torch.Size([4, 1])
+    """
+
+    def __init__(
+        self,
+        inp_neurons=512,
+        activation=torch.nn.LeakyReLU,
+        lin_blocks=1,
+        lin_neurons=4096,
+        out_neurons=128,
+    ):
+
+        super().__init__()
+        self.blocks = nn.ModuleList()
+
+        self.blocks.extend(
+            [torch.nn.Linear(inp_neurons, lin_neurons), activation()]
+        )
+        for block_index in range(1, lin_blocks):
+            self.blocks.extend(
+                [torch.nn.Linear(lin_neurons, lin_neurons), activation()]
+            )
+
+        self.blocks.extend([torch.nn.Linear(lin_neurons, out_neurons)])
+
+    def forward(self, x):
+        for layer in self.blocks:
+            x = layer(x)
+        return x
+
+
+class ContrastiveLoss(torch.nn.Module):
+    """
+    An implementation of contrastive loss with a trainable projection. Because
+    of dot products, predictions are symmetric.
+
+    Arguments
+    ---------
+    temperature: float
+        The temperature for scaling logits before softmax
+
+    Return
+    ---------
+    predictions : torch.Tensor
+        The probabilities of samples of shape [N, N], where N is the batch size.
+        The diagonal elements should be ignored.
+
+    Example
+    -------
+    >>> projection = Projection(inp_neurons=2, lin_neurons=2048, out_neurons=128)
+    >>> prob = ContrastiveLoss(projection, temperature=0.1)
+    >>> outputs = torch.tensor([ [1., 2.], [-1., -2.], [2., 1.], [-2., -1.] ])
+    >>> prediction = prob(outputs)
+    """
+
+    def __init__(self, projection, device="cpu", temperature=1.0):
+        super(ContrastiveLoss, self).__init__()
+        self.projection = projection.to(device)
+        self.temperature = temperature
+
+    def forward(self, outputs):
+        """
+        Compute contrastive loss for outputs
+
+        Arguments
+        ---------
+        outputs : torch.Tensor
+            The outputs of shape [N, D]
+
+        Return
+        ---------
+        predictions : torch.Tensor
+            Log probabilities of samples of shape [N, N], where N is the batch size.
+        """
+        outputs = self.projection(outputs)
+        outputs = F.normalize(outputs)
+        N = outputs.shape[0]
+        logits = torch.matmul(outputs, outputs.transpose(0, 1))
+        neg_identity = -1e6 * torch.eye(N).to(outputs.device)
+        logits = logits.reshape(N, N) + neg_identity
+        return F.softmax(logits / self.temperature, dim=1)
+
+
+class BinaryContrastiveLoss(ContrastiveLoss):
+    """
+    An implementation of binary contrastive loss with a trainable projection.
+    It concatenates two embeddings, and predict whether they belong to the same
+    class or not. Therefore, predictions may not be symmetric.
+
+    Arguments
+    ---------
+    projection: torch.nn.Module
+        Predicts logits for concatenated embeddings
+
+    temperature: float
+        The temperature for scaling logits before softmax
+
+    Return
+    ---------
+    predictions : torch.Tensor
+        The probabilities of samples of shape [N, N], where N is the batch size.
+        The diagonal elements should be ignored.
+
+    Example
+    -------
+    >>> projection = Projection(inp_neurons=2+2, out_neurons=1)
+    >>> prob = BinaryContrastiveLoss(projection, temperature=0.1)
+    >>> outputs = torch.tensor([ [1., 2.], [2., 1.], [-1., -2.], [-2., -1.] ])
+    >>> prediction = prob(outputs)
+    """
+
+    def forward(self, outputs):
+        """
+        Compute Discriminative ContrastiveLoss between two tensors
+
+        Arguments
+        ---------
+        outputs : torch.Tensor
+            The outputs of shape [N, D]
+
+        Return
+        ---------
+        predictions : torch.Tensor
+
+        """
+        N = outputs.shape[0]
+        outputs = outputs.unsqueeze(1).repeat(1, N, 1)
+        outputs = torch.cat([outputs, outputs.transpose(0, 1)], dim=2)
+        neg_identity = -1e6 * torch.eye(N).to(outputs.device)
+        logits = self.projection(outputs).reshape(N, N) + neg_identity
+        return logits / self.temperature
+
+
+class ContrastiveLearningWrapper(torch.nn.Module):
+    """
+    Contrastive learning
+
+    Arguments
+    ---------
+    cont_loss : torch.nn.Module
+        User-defined module that compute the probabilities of outputs
+
+    criterion: torch.nn.{BCELoss,BCEWithLogitsLoss}
+        Compute the loss between predictions and targets, where reduction must
+        be 'none' for distinguishing positive/negative losses
+
+    Returns
+    ---------
+    loss : torch.Tensor
+        Contrastive learning loss
+
+    predictions : torch.Tensor
+        The probabilities of outputs
+
+    Example
+    -------
+    >>> outputs = torch.tensor([ [1., 2.], [-1., -2.], [2., 1.], [-2., -1.] ])
+    >>> outputs = outputs.unsqueeze(1)
+    >>> targets = torch.tensor([   1,        2,         1,          2,      ])
+    >>> targets = targets.unsqueeze(1)
+    >>> projection = Projection(inp_neurons=2, out_neurons=128)
+    >>> criterion = torch.nn.BCELoss(reduction="none")
+    >>> cont_loss = ContrastiveLoss(projection, temperature=0.1)
+    >>> cont = ContrastiveLearningWrapper(cont_loss, criterion)
+    >>> optimizer = torch.optim.SGD(projection.parameters(), lr=0.01)
+    >>> for i in range(25):
+    ...     loss, predictions = cont(outputs, targets)
+    ...     optimizer.zero_grad()
+    ...     loss.backward()
+    ...     optimizer.step()
+    >>> torch.argmax(predictions, dim=1)
+    tensor([2, 3, 0, 1])
+    >>> projection = Projection(inp_neurons=2+2, out_neurons=1)
+    >>> criterion = torch.nn.BCEWithLogitsLoss(reduction="sum")
+    >>> cont_loss = BinaryContrastiveLoss(projection, temperature=0.1)
+    >>> cont = ContrastiveLearningWrapper(cont_loss, criterion, nl_weight=0.5)
+    >>> optimizer = torch.optim.SGD(projection.parameters(), lr=0.01)
+    >>> for i in range(25):
+    ...     loss, predictions = cont(outputs, targets)
+    ...     optimizer.zero_grad()
+    ...     loss.backward()
+    ...     optimizer.step()
+    >>> torch.argmax(predictions, dim=1)
+    tensor([2, 3, 0, 1])
+    """
+
+    def __init__(self, cont_loss, criterion, nl_weight=0.0):
+        super(ContrastiveLearningWrapper, self).__init__()
+        self.cont_loss = cont_loss
+        self.criterion = criterion
+        self.nl_weight = nl_weight
+
+    def forward(self, outputs, targets):
+        """
+            Arguments
+            ---------
+            outputs : torch.Tensor
+                Network output tensor, of shape
+                [batch, 1, outdim, ...].
+            targets : torch.Tensor
+                Target tensor, of shape [batch, 1].
+
+            Returns
+            -------
+            loss: torch.Tensor
+                contrastive learning loss
+        """
+        N = outputs.shape[0]
+        outputs = outputs.squeeze(1)
+        targets = targets.squeeze(1)
+        predictions = self.cont_loss(outputs)
+        positives = torch.zeros([N, N]).to(outputs.device)
+        for y in targets:
+            index = (targets == y).nonzero(as_tuple=False)
+            for i in index:
+                for j in index:
+                    if i != j:
+                        positives[i, j] = 1
+        # TODO: dealing with more than 1 positive per anchor?
+        loss_matrix = self.criterion(predictions, positives)
+        positive_loss = loss_matrix * positives
+        positive_loss = positive_loss.sum() / positives.sum()
+        loss = positive_loss
+        if self.nl_weight > 0:
+            negatives = (1 - positives) * (1 - torch.eye(N).to(outputs.device))
+            negative_loss = loss_matrix * negatives
+            negative_loss = negative_loss.sum() / negatives.sum()
+            loss += self.nl_weight * negative_loss
+        return loss, predictions
