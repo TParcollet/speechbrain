@@ -49,21 +49,25 @@ class EmbeddingBrain(sb.core.Brain):
             lens = lens.repeat_interleave(1 + params.num_corrupts, dim=0)
 
         emb = self.compute_embeddings(wavs, lens, init_params)
-        return emb, lens
+        predictions = params.classifier(emb, init_params)
+        return emb, predictions, lens
 
     def compute_objectives(self, outputs, targets, stage="train"):
-        outputs, lens = outputs
+        outputs, predictions, lens = outputs
         uttid, spkid, _ = targets
 
         spkid, lens = spkid.to(params.device), lens.to(params.device)
         if stage == "train" and hasattr(params, "num_corrupts"):
             spkid = spkid.repeat([1 + params.num_corrupts, 1])
 
-        loss, predictions = params.cont_wrapper(outputs, spkid)
+        cont_loss = params.cont_wrapper(outputs, spkid)
+        clas_loss = params.compute_cost(predictions, spkid)
+        loss = cont_loss + clas_loss
 
         stats = {}
         if stage != "train":
             stats["loss"] = loss
+            stats["error"] = params.compute_error(predictions, spkid)
 
         return loss, stats
 
@@ -114,8 +118,8 @@ class EmbeddingBrain(sb.core.Brain):
                     outputs = params.projection(samples)
                     scores = torch.sigmoid(outputs)
                 else:
-                    enrol, test = torch.chunk(samples, 2, dim=1).unsqueeze(2)
-                    scores = F.cosine_similarity(enrol, test)
+                    enrol, test = torch.chunk(samples, 2, dim=1)
+                    scores = F.cosine_similarity(enrol, test).unsqueeze(2)
 
                 for j, score in enumerate(scores.tolist()):
                     if labs[j] == 1:
@@ -198,18 +202,26 @@ if __name__ == "__main__":
     )
 
     # Function for pre-trained model downloads
-    def download_and_pretrain():
+    def download_and_pretrain(model, model_path, save_to):
         """ Downloads the specified pre-trained model
         """
-        save_model_path = params.output_folder + "/save/embedding_model.ckpt"
-        if "http" in params.embedding_file:
-            download_file(params.embedding_file, save_model_path)
-        params.embedding_model.load_state_dict(
-            torch.load(save_model_path), strict=True
-        )
+        if "http" in model_path:
+            save_model_path = params.output_folder + save_to
+            download_file(model_path, save_model_path)
+        else:
+            save_model_path = model_path
+        model.load_state_dict(torch.load(save_model_path), strict=True)
 
     if hasattr(params, "embedding_file"):
-        download_and_pretrain()
+        download_and_pretrain(
+            params.embedding_model,
+            params.embedding_file,
+            "/save/embedding_model.ckpt",
+        )
+    if hasattr(params, "classifier_file"):
+        download_and_pretrain(
+            params.classifier, params.classifier_file, "/save/classifier.ckpt"
+        )
     # Recover checkpoints
     params.checkpointer.recover_if_possible()
 

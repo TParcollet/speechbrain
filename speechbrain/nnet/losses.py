@@ -666,9 +666,6 @@ class ContrastiveLearningWrapper(torch.nn.Module):
     loss : torch.Tensor
         Contrastive learning loss
 
-    predictions : torch.Tensor
-        The probabilities of outputs
-
     Example
     -------
     >>> outputs = torch.tensor([ [1., 2.], [-1., -2.], [2., 1.], [-2., -1.] ])
@@ -681,10 +678,11 @@ class ContrastiveLearningWrapper(torch.nn.Module):
     >>> cont = ContrastiveLearningWrapper(cont_loss, criterion)
     >>> optimizer = torch.optim.SGD(projection.parameters(), lr=0.01)
     >>> for i in range(25):
-    ...     loss, predictions = cont(outputs, targets)
+    ...     loss = cont(outputs, targets)
     ...     optimizer.zero_grad()
     ...     loss.backward()
     ...     optimizer.step()
+    >>> predictions = cont_loss(outputs.squeeze(1))
     >>> torch.argmax(predictions, dim=1)
     tensor([2, 3, 0, 1])
     >>> projection = Projection(inp_neurons=2+2, out_neurons=1)
@@ -693,10 +691,11 @@ class ContrastiveLearningWrapper(torch.nn.Module):
     >>> cont = ContrastiveLearningWrapper(cont_loss, criterion, nl_weight=0.5)
     >>> optimizer = torch.optim.SGD(projection.parameters(), lr=0.01)
     >>> for i in range(25):
-    ...     loss, predictions = cont(outputs, targets)
+    ...     loss = cont(outputs, targets)
     ...     optimizer.zero_grad()
     ...     loss.backward()
     ...     optimizer.step()
+    >>> predictions = cont_loss(outputs.squeeze(1))
     >>> torch.argmax(predictions, dim=1)
     tensor([2, 3, 0, 1])
     """
@@ -743,4 +742,4 @@ class ContrastiveLearningWrapper(torch.nn.Module):
             negative_loss = loss_matrix * negatives
             negative_loss = negative_loss.sum() / negatives.sum()
             loss += self.nl_weight * negative_loss
-        return loss, predictions
+        return loss
