@@ -9,11 +9,11 @@ __set_seed: !!python/object/apply:torch.manual_seed [!ref <seed>]
 
 # Basic parameters
 data_folder: !PLACEHOLDER
-output_folder: !ref results/complexDCCRN_dynamic/<seed>
+output_folder: !ref results/complexDCCRN_dynamic_mag/<seed>
 enhanced_folder: !ref <output_folder>/enhanced/
 
 use_tensorboard: False
-tensorboard_logs: !ref results/logs/complexDCCRN_dynamic/<seed>
+tensorboard_logs: !ref results/logs/complexDCCRN_dynamic_mag/<seed>
 train_log: !ref <output_folder>/train_log.txt
 
 use_multigpu: True
@@ -27,7 +27,7 @@ csv_test: !ref <data_folder>/test.csv
 # Training Parameters
 N_epochs: 50
 N_batch: 8
-lr: 0.001
+lr: 0.0001
 device: cuda
 
 # Model Parameters
@@ -38,7 +38,7 @@ strides: [2, 1]
 rnn_size: 256
 rnn_layers: 2
 
-mask_activation: !new:torch.nn.Tanh
+mask_activation: !new:torch.nn.ReLU
 
 # FFT Parameters
 samplerate: 16000

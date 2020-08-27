@@ -7,6 +7,7 @@ Authors
 import torch  # noqa F4001
 import torch.nn as nn
 from speechbrain.nnet.complex_networks.CNN import ComplexConv2d
+from speechbrain.nnet.CNN import Conv2d
 from speechbrain.nnet.linear import Linear
 from speechbrain.nnet.complex_networks.normalization import ComplexBatchNorm
 from speechbrain.nnet.RNN import LSTM
@@ -36,6 +37,7 @@ class DCCRN(nn.Module):
         N, T, F, C = first_input.shape
         self.device = first_input.device
 
+        self.input_conv = Conv2d(2, (3, 3))
         self.encoder_convs = nn.ModuleList(
             [
                 Encoder_layer(
@@ -47,6 +49,7 @@ class DCCRN(nn.Module):
 
         x = first_input
         # Get the output size of each encoder layers
+        x = self.input_conv(x, init_params=True)
         self.encoder_size = []
         for conv in self.encoder_convs:
             x = conv(x, init_params=True)
@@ -85,9 +88,13 @@ class DCCRN(nn.Module):
             )
         )
 
+        self.output_conv = Conv2d(1, (3, 3))
+
     def forward(self, x, init_params=False):
         if init_params:
             self.init_params(x)
+
+        x = self.input_conv(x)
 
         encoder_outputs = [x]
         for conv in self.encoder_convs:
@@ -97,17 +104,6 @@ class DCCRN(nn.Module):
         # Apply RNN and linear transform back to 4-D
         rnn_out = self.rnn(x, init_params=init_params)
         rnn_out = self.linear_trans(rnn_out, init_params=init_params)
-
-        # If use complex RNN + complex Linear:
-        # split then reshape is needed instead of directly reshape
-        # rnn_out_r, rnn_out_i = torch.split(rnn_out, self.linear_dim, -1)
-        # rnn_out_r = rnn_out_r.reshape(
-        #     x.shape[0], x.shape[1], x.shape[2], x.shape[3] // 2
-        # )
-        # rnn_out_i = rnn_out_i.reshape(
-        #     x.shape[0], x.shape[1], x.shape[2], x.shape[3] // 2
-        # )
-        # rnn_out = torch.cat([rnn_out_r, rnn_out_i], dim=3)
 
         # Directly reshape
         rnn_out = rnn_out.reshape(
@@ -122,6 +118,8 @@ class DCCRN(nn.Module):
                 [skip_, decoder_out], input_type="convolution", channels_axis=3
             )
             decoder_out = conv(decoder_out, init_params=init_params)
+
+        decoder_out = self.output_conv(decoder_out, init_params=init_params)
 
         return decoder_out
 

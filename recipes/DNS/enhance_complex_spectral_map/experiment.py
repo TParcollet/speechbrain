@@ -84,33 +84,16 @@ class SEBrain(sb.core.Brain):
         ids, wavs, lens = x
         wavs, lens = wavs.to(params.device), lens.to(params.device)
 
-        feats = params.compute_stft(wavs)  # [N, T, F, 2]
-        output = params.model(feats, init_params)
+        feats = params.compute_stft(wavs)
+        feats = spectral_magnitude(feats, power=0.5)
+        feats = torch.unsqueeze(feats, dim=-1)
+        feats = torch.log1p(feats)
 
-        # Extract magnitude
-        noisy_mag = spectral_magnitude(feats, power=0.5)
-        output_mag = spectral_magnitude(output, power=0.5)
+        output = params.model(feats, init_params=init_params)
+        output = params.mask_activation(output)
+        output = torch.squeeze(output, dim=-1)
 
-        # Extract phase
-        noisy_phase = torch.atan2(feats[:, :, :, 1], feats[:, :, :, 0])
-        output_phase = torch.atan2(output[:, :, :, 1], output[:, :, :, 0])
-
-        # enhanced = |X||M| * e^(X_phase + M_phase)
-        enhanced_spec = torch.mul(
-            torch.unsqueeze(noisy_mag * params.mask_activation(output_mag), -1),
-            torch.cat(
-                (
-                    torch.unsqueeze(torch.cos(noisy_phase + output_phase), -1),
-                    torch.unsqueeze(torch.sin(noisy_phase + output_phase), -1),
-                ),
-                -1,
-            ),
-        )
-
-        enhanced_wavs = params.compute_istft(enhanced_spec)
-
-        padding = (0, wavs.shape[1] - enhanced_wavs.shape[1])
-        return torch.nn.functional.pad(enhanced_wavs, padding)
+        return output
 
     def compute_sisnr(self, est_target, target, lens):
         assert target.size() == est_target.size()
@@ -143,7 +126,11 @@ class SEBrain(sb.core.Brain):
         ids, wavs, lens = cleans
         wavs, lens = wavs.to(params.device), lens.to(params.device)
 
-        loss = self.compute_sisnr(predictions, wavs, lens)
+        feats = params.compute_stft(wavs)
+        feats = spectral_magnitude(feats, power=0.5)
+        feats = torch.log1p(feats)
+
+        loss = params.compute_cost(predictions, feats, lens)
 
         return loss, {}
 
@@ -167,16 +154,15 @@ class SEBrain(sb.core.Brain):
         noisys, cleans = batch
         predictions = self.compute_forward(noisys, stage=stage)
 
-        # Normalize the waveform
-        abs_max, _ = torch.max(torch.abs(predictions), dim=1, keepdim=True)
-        pred_wavs = predictions / abs_max * 0.99
+        # Write batch enhanced files to directory
+        pred_wavs = self.resynthesize(torch.expm1(predictions), noisys)
 
         # Evaluating PESQ and STOI
         _, clean_wavs, lens = cleans
 
         lens = lens * clean_wavs.shape[1]
         pesq_scores, stoi_scores = multiprocess_evaluation(
-            pred_wavs.cpu().numpy(),
+            pred_wavs.numpy(),
             clean_wavs.numpy(),
             lens.numpy(),
             multiprocessing.cpu_count(),
@@ -190,7 +176,6 @@ class SEBrain(sb.core.Brain):
         if stage == "test":
             for name, pred_wav, length in zip(noisys[0], pred_wavs, lens):
                 enhance_path = os.path.join(params.enhanced_folder, name)
-                pred_wav = pred_wav.cpu()
                 torchaudio.save(enhance_path, pred_wav[: int(length)], 16000)
 
         return stats
@@ -219,6 +204,35 @@ class SEBrain(sb.core.Brain):
             importance_keys=[ckpt_recency, lambda c: c.meta["PESQ"]],
         )
 
+    def resynthesize(self, predictions, noisys):
+        ids, wavs, lens = noisys
+        lens = lens * wavs.shape[1]
+        predictions = predictions.cpu()
+
+        # Extract noisy phase
+        feats = params.compute_stft(wavs)
+        phase = torch.atan2(feats[:, :, :, 1], feats[:, :, :, 0])
+        complex_predictions = torch.mul(
+            torch.unsqueeze(predictions, -1),
+            torch.cat(
+                (
+                    torch.unsqueeze(torch.cos(phase), -1),
+                    torch.unsqueeze(torch.sin(phase), -1),
+                ),
+                -1,
+            ),
+        )
+
+        # Get the predicted waveform
+        pred_wavs = params.compute_istft(complex_predictions)
+
+        # Normalize the waveform
+        abs_max, _ = torch.max(torch.abs(pred_wavs), dim=1, keepdim=True)
+        pred_wavs = pred_wavs / abs_max * 0.99
+
+        padding = (0, wavs.shape[1] - pred_wavs.shape[1])
+        return torch.nn.functional.pad(pred_wavs, padding)
+
 
 prepare_dns(
     data_folder=params.data_folder,
@@ -237,7 +251,7 @@ se_brain = SEBrain(
 
 if params.use_multigpu:
     params.model = torch.nn.DataParallel(params.model)
-
+print(params.model)
 # Load latest checkpoint to resume training
 params.checkpointer.recover_if_possible()
 se_brain.fit(params.epoch_counter, train_set, valid_set)

@@ -521,13 +521,10 @@ def complex_init(
         else:
             size = (out_features, in_features) + (*kernel_size,)
 
-    # modulus = np.random.rayleigh(scale=s, size=size)
-    # phase = np.random.uniform(-np.pi, np.pi, size)
-    # weight_real = modulus * np.cos(phase)
-    # weight_imag = modulus * np.sin(phase)
-
-    weight_imag = np.random.uniform(-s, s, size=size)
-    weight_real = np.random.uniform(-s, s, size=size)
+    modulus = np.random.rayleigh(scale=s, size=size)
+    phase = np.random.uniform(-np.pi, np.pi, size)
+    weight_real = modulus * np.cos(phase)
+    weight_imag = modulus * np.sin(phase)
 
     return (weight_real, weight_imag)
 
