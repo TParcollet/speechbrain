@@ -39,6 +39,7 @@ rnn_size: 256
 rnn_layers: 2
 
 mask_activation: !new:torch.nn.ReLU
+norm: !name:speechbrain.nnet.complex_networks.normalization.ComplexLayerNorm
 
 # FFT Parameters
 samplerate: 16000
@@ -48,8 +49,8 @@ hop_length: 16
 
 add_noise: !new:speechbrain.processing.speech_augmentation.AddNoise
   csv_file: !ref <csv_noise>
-  snr_low: 0
-  snr_high: 40
+  snr_low: -5
+  snr_high: 20
   pad_noise: False
   start_index: 0
   csv_read: [wav]
@@ -92,6 +93,7 @@ model: !new:speechbrain.lobes.models.DCCRN.DCCRN
   rnn_size: !ref <rnn_size>
   rnn_layers: !ref <rnn_layers>
   padding: !ref <padding_type>
+  norm: !ref <norm>
 
 compute_cost: !name:speechbrain.nnet.losses.mse_loss
 

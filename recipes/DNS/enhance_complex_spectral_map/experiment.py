@@ -89,7 +89,7 @@ class SEBrain(sb.core.Brain):
         feats = torch.unsqueeze(feats, dim=-1)
         feats = torch.log1p(feats)
 
-        output = params.model(feats, init_params=init_params)
+        output = params.model(feats, init_params)
         output = params.mask_activation(output)
         output = torch.squeeze(output, dim=-1)
 
