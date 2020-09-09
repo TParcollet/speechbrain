@@ -22,7 +22,7 @@ gradient_accumulation: 4
 device: 'cuda'
 multigpu: True
 auto_mix_precision: False
-ckpt_avg: True
+ckpt_avg: False
 num_ckpt_to_avg: 10
 loss_reduction: 'batchmean'
 
@@ -88,6 +88,7 @@ Transformer: !new:speechbrain.lobes.models.transformer.TransformerASR.Transforme
     dropout: 0.0
     activation: !name:torch.nn.GELU
     num_modules: 3
+    use_group_comm: True
     normalize_before: True
 
 ctc_lin: !new:speechbrain.nnet.linear.Linear

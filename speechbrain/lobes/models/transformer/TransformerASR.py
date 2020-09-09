@@ -64,6 +64,8 @@ class TransformerASR(TransformerInterface):
         return_attention=False,
         positional_encoding=True,
         normalize_before=False,
+        num_modules=1,
+        use_group_comm=False,
     ):
         super().__init__(
             d_model=d_model,
