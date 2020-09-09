@@ -11,7 +11,11 @@ from speechbrain.nnet.attention import (
     MultiheadAttention,
     PositionalwiseFeedForward,
 )
-from speechbrain.nnet.normalization import LayerNorm
+
+from speechbrain.nnet.group_layer_norm import GroupLayerNorm
+from speechbrain.lobes.models.transformer.group_communication import (
+    GroupCommunication,
+)
 
 
 class TransformerInterface(nn.Module):
@@ -56,6 +60,8 @@ class TransformerInterface(nn.Module):
         return_attention=False,
         positional_encoding=True,
         normalize_before=False,
+        num_modules=1,
+        use_group_comm=False,
     ):
         super().__init__()
 
@@ -79,6 +85,8 @@ class TransformerInterface(nn.Module):
                 activation=activation,
                 return_attention=return_attention,
                 normalize_before=normalize_before,
+                num_modules=num_modules,
+                use_group_comm=use_group_comm,
             )
 
         # initialize the dncoder
@@ -94,6 +102,8 @@ class TransformerInterface(nn.Module):
                 activation=activation,
                 return_attention=return_attention,
                 normalize_before=normalize_before,
+                num_modules=num_modules,
+                use_group_comm=use_group_comm,
             )
 
     def forward(self, **kwags):
@@ -187,21 +197,28 @@ class TransformerEncoderLayer(nn.Module):
         dropout=0.1,
         activation=nn.ReLU,
         normalize_before=False,
+        num_modules=1,
+        use_group_comm=False,
     ):
         super().__init__()
         self.self_att = MultiheadAttention(
-            nhead=nhead, dropout=dropout, kdim=kdim, vdim=vdim
+            nhead=nhead, dropout=dropout, kdim=kdim, vdim=vdim, nb=num_modules,
         )
         self.pos_ffn = PositionalwiseFeedForward(
-            d_ffn=d_ffn, dropout=dropout, activation=activation
+            d_ffn=d_ffn, dropout=dropout, activation=activation, nb=num_modules,
         )
 
-        self.norm1 = LayerNorm(eps=1e-6)
-        self.norm2 = LayerNorm(eps=1e-6)
+        self.norm1 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
+        self.norm2 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
         self.dropout1 = torch.nn.Dropout(dropout)
         self.dropout2 = torch.nn.Dropout(dropout)
 
         self.normalize_before = normalize_before
+        self.use_group_comm = use_group_comm
+        if use_group_comm:
+            self.group_comm = GroupCommunication(d_ffn, num_modules)
+            self.norm_comm = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
+            self.dropout_comm = torch.nn.Dropout(dropout)
 
     def forward(
         self, src, src_mask=None, src_key_padding_mask=None, init_params=False
@@ -234,6 +251,7 @@ class TransformerEncoderLayer(nn.Module):
         src = src + self.dropout1(output)
         if not self.normalize_before:
             src = self.norm1(src, init_params)
+        src = self.norm1(src, init_params=init_params)
 
         if self.normalize_before:
             src1 = self.norm2(src, init_params)
@@ -245,6 +263,13 @@ class TransformerEncoderLayer(nn.Module):
         output = src + self.dropout2(output)
         if not self.normalize_before:
             output = self.norm2(output, init_params)
+        output = self.norm2(output, init_params=init_params)
+
+        if self.use_group_comm:
+            residual = output * 1.0
+            output = self.group_comm(output, init_params=init_params)
+            output = self.dropout_comm(output)
+            output = self.norm_comm(output + residual, init_params=init_params)
 
         return output, self_attn
 
@@ -288,6 +313,8 @@ class TransformerEncoder(nn.Module):
         activation=nn.ReLU,
         return_attention=False,
         normalize_before=False,
+        num_modules=1,
+        use_group_comm=False,
     ):
         super().__init__()
         self.layers = torch.nn.ModuleList(
@@ -300,11 +327,15 @@ class TransformerEncoder(nn.Module):
                     dropout=dropout,
                     activation=activation,
                     normalize_before=normalize_before,
+                    num_modules=num_modules
+                    if (j > 1 and j < num_layers - 1)
+                    else 1,
+                    use_group_comm=use_group_comm,
                 )
-                for _ in range(num_layers)
+                for j in range(num_layers)
             ]
         )
-        self.norm = LayerNorm(eps=1e-6)
+        self.norm = GroupLayerNorm(d_ffn, 1, eps=1e-6)
         self.return_attention = return_attention
 
     def forward(
@@ -330,7 +361,7 @@ class TransformerEncoder(nn.Module):
                 init_params=init_params,
             )
             attention_lst.append(attention)
-        output = self.norm(output, init_params)
+        output = self.norm(output, init_params=init_params)
 
         if self.return_attention:
             return output, attention_lst
@@ -370,22 +401,30 @@ class TransformerDecoderLayer(nn.Module):
         dropout=0.1,
         activation=nn.ReLU,
         normalize_before=False,
+        num_modules=1,
+        use_group_comm=False,
     ):
         super().__init__()
         self.self_attn = MultiheadAttention(
-            nhead=nhead, kdim=kdim, vdim=vdim, dropout=dropout
+            nhead=nhead, kdim=kdim, vdim=vdim, dropout=dropout, nb=num_modules,
         )
         self.mutihead_attn = MultiheadAttention(
-            nhead=nhead, kdim=kdim, vdim=vdim, dropout=dropout
+            nhead=nhead, kdim=kdim, vdim=vdim, dropout=dropout, nb=num_modules,
         )
         self.pos_ffn = PositionalwiseFeedForward(
-            d_ffn=d_ffn, dropout=dropout, activation=activation
+            d_ffn=d_ffn, dropout=dropout, activation=activation, nb=num_modules,
         )
 
+        self.use_group_comm = use_group_comm
+        if use_group_comm:
+            self.group_comm = GroupCommunication(d_ffn, num_modules)
+            self.norm_comm = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
+            self.dropout_comm = torch.nn.Dropout(dropout)
+
         # normalization layers
-        self.norm1 = LayerNorm(eps=1e-6)
-        self.norm2 = LayerNorm(eps=1e-6)
-        self.norm3 = LayerNorm(eps=1e-6)
+        self.norm1 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
+        self.norm2 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
+        self.norm3 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
         self.dropout1 = torch.nn.Dropout(dropout)
         self.dropout2 = torch.nn.Dropout(dropout)
         self.dropout3 = torch.nn.Dropout(dropout)
@@ -470,6 +509,12 @@ class TransformerDecoderLayer(nn.Module):
         if not self.normalize_before:
             tgt = self.norm3(tgt, init_params)
 
+        if self.use_group_comm:
+            residual = tgt * 1.0
+            tgt = self.group_comm(tgt, init_params=init_params)
+            tgt = self.dropout_comm(tgt)
+            tgt = self.norm_comm(tgt + residual, init_params=init_params)
+
         return tgt, self_attn, multihead_attention
 
 
@@ -508,6 +553,8 @@ class TransformerDecoder(nn.Module):
         activation=nn.ReLU,
         return_attention=False,
         normalize_before=False,
+        num_modules=1,
+        use_group_comm=False,
     ):
         super().__init__()
         self.layers = torch.nn.ModuleList(
@@ -520,11 +567,15 @@ class TransformerDecoder(nn.Module):
                     dropout=dropout,
                     activation=activation,
                     normalize_before=normalize_before,
+                    num_modules=num_modules
+                    if (j > 1 and j < num_layers - 1)
+                    else 1,
+                    use_group_comm=use_group_comm,
                 )
-                for _ in range(num_layers)
+                for j in range(num_layers)
             ]
         )
-        self.norm = LayerNorm(eps=1e-6)
+        self.norm = GroupLayerNorm(d_ffn, 1, eps=1e-6)
         self.return_attention = return_attention
 
     def forward(
@@ -567,7 +618,7 @@ class TransformerDecoder(nn.Module):
             )
             self_attns.append(self_attn)
             multihead_attns.append(multihead_attn)
-        output = self.norm(output, init_params)
+        output = self.norm(output, init_params=init_params)
 
         if self.return_attention:
             return output, self_attns, multihead_attns
