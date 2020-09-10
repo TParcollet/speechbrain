@@ -87,9 +87,9 @@ Transformer: !new:speechbrain.lobes.models.transformer.TransformerASR.Transforme
     d_ffn: 2048
     dropout: 0.0
     activation: !name:torch.nn.GELU
-    num_modules: 3
+    num_modules: 2
     use_group_comm: True
-    normalize_before: True
+    normalize_before: False
 
 ctc_lin: !new:speechbrain.nnet.linear.Linear
     n_neurons: !ref <output_neurons>
