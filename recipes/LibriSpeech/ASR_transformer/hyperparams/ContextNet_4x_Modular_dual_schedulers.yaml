@@ -80,7 +80,7 @@ CNN: !new:speechbrain.lobes.models.ContextNet.ContextNet
 
 Transformer: !new:speechbrain.lobes.models.transformer.TransformerASR.TransformerASR # yamllint disable-line rule:line-length
     tgt_vocab: !ref <output_neurons>
-    d_model: 512
+    d_model: 728
     nhead: 8
     num_encoder_layers: 12
     num_decoder_layers: 6

@@ -6,19 +6,21 @@ from speechbrain.nnet.group_linear import GroupLinear
 
 
 class GroupCommunication(nn.Module):
-    def __init__(self, dim, n_blocks):
+    def __init__(self, dim, n_blocks, n_heads):
         super(GroupCommunication, self).__init__()
 
-        # self.n_heads = n_heads
-        self.n_heads = 2
+        self.n_heads = n_heads // n_blocks
+        # self.n_heads = nheads
         self.n_blocks = n_blocks
         # self.head_dim = self.block_dim // self.n_heads
-        self.head_dim = 32
-        self.scale = self.head_dim ** -0.5
+        # self.head_dim = 32
+        # self.scale = self.head_dim ** -0.5
 
     def init_params(self, first_input):
         self.dim = first_input.shape[-1]
         self.block_dim = self.dim // self.n_blocks
+        self.head_dim = self.block_dim // self.n_heads
+        self.scale = self.head_dim ** -0.5
 
         self.emb_dim = self.head_dim * self.n_heads * self.n_blocks
 

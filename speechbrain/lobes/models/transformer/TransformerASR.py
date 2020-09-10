@@ -78,6 +78,8 @@ class TransformerASR(TransformerInterface):
             return_attention=return_attention,
             positional_encoding=positional_encoding,
             normalize_before=normalize_before,
+            num_modules=num_modules,
+            use_group_comm=use_group_comm,
         )
 
         self.custom_src_module = Sequential(
@@ -140,8 +142,8 @@ class TransformerASR(TransformerInterface):
         )
 
         if init_params:
-            for p in self.parameters():
-                print(p)
+            for name, param in self.named_parameters():
+                print(name, param.shape)
 
         return encoder_out, decoder_out
 

@@ -216,7 +216,7 @@ class TransformerEncoderLayer(nn.Module):
         self.normalize_before = normalize_before
         self.use_group_comm = use_group_comm
         if use_group_comm:
-            self.group_comm = GroupCommunication(d_ffn, num_modules)
+            self.group_comm = GroupCommunication(d_ffn, num_modules, nhead)
             self.norm_comm = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
             self.dropout_comm = torch.nn.Dropout(dropout)
 
@@ -417,7 +417,7 @@ class TransformerDecoderLayer(nn.Module):
 
         self.use_group_comm = use_group_comm
         if use_group_comm:
-            self.group_comm = GroupCommunication(d_ffn, num_modules)
+            self.group_comm = GroupCommunication(d_ffn, num_modules, nhead)
             self.norm_comm = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
             self.dropout_comm = torch.nn.Dropout(dropout)
 
