@@ -208,7 +208,7 @@ class TransformerEncoderLayer(nn.Module):
         self.num_modules = num_modules
         self.d_ffn = d_ffn
         if num_modules > 1:
-            self.competition = GroupLinearLayer(d_ffn//num_modules, 1, num_modules, a=0.05)
+            self.competition = GroupLinearLayer(d_ffn, num_modules, num_modules, a=0.05)
         else:
             self.competition = None
 
@@ -417,7 +417,7 @@ class TransformerDecoderLayer(nn.Module):
         self.num_modules = num_modules
         self.d_ffn = d_ffn
         if num_modules > 1:
-            self.competition = GroupLinearLayer(d_ffn//num_modules, 1, num_modules, a=0.05)
+            self.competition = GroupLinearLayer(d_ffn, num_modules, num_modules, a=0.05)
         else:
             self.competition = None
 
