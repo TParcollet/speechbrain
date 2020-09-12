@@ -1,4 +1,5 @@
 import torch.nn.functional as F
+import torch
 import torch.nn as nn
 import math
 
@@ -43,6 +44,7 @@ class GroupLinear(nn.Module):
         x = x.reshape((bs * ts, self.nb, m // self.nb))
         x = x.permute(1, 0, 2)
         x = torch.bmm(x, self.weight)
+        x = x.permute(1, 0, 2)
 
         if self.bias is not None:
             x = x + self.bias
