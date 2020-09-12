@@ -7,12 +7,14 @@ Authors
 import torch
 import math
 import torch.nn as nn
+import torch.nn.functional as F
 from speechbrain.nnet.attention import (
     MultiheadAttention,
     PositionalwiseFeedForward,
 )
 
 from speechbrain.nnet.group_layer_norm import GroupLayerNorm
+from speechbrain.nnet.group_linear import GroupLinear
 from speechbrain.lobes.models.transformer.group_communication import (
     GroupCommunication,
 )
@@ -208,6 +210,14 @@ class TransformerEncoderLayer(nn.Module):
             d_ffn=d_ffn, dropout=dropout, activation=activation, nb=num_modules,
         )
 
+        self.num_modules = num_modules
+        self.d_ffn = d_ffn
+        self.competition = None
+        # if num_modules > 1:
+        #     self.competition = GroupLinearLayer(d_ffn, num_modules, num_modules, a=0.05)
+        # else:
+        #     self.competition = None
+
         self.norm1 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
         self.norm2 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
         self.dropout1 = torch.nn.Dropout(dropout)
@@ -215,10 +225,20 @@ class TransformerEncoderLayer(nn.Module):
 
         self.normalize_before = normalize_before
         self.use_group_comm = use_group_comm
-        if use_group_comm:
+        if use_group_comm and num_modules > 1:
             self.group_comm = GroupCommunication(d_ffn, num_modules, nhead)
             self.norm_comm = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
             self.dropout_comm = torch.nn.Dropout(dropout)
+
+    def init_params(self, first_input):
+        self.din = first_input.shape[-1]
+
+        if self.num_modules > 1:
+            self.competition = GroupLinear(
+                self.din, self.num_modules, self.num_modules, a=0.05
+            ).to(first_input.device)
+        else:
+            self.competition = None
 
     def forward(
         self, src, src_mask=None, src_key_padding_mask=None, init_params=False
@@ -237,6 +257,18 @@ class TransformerEncoderLayer(nn.Module):
             src1 = self.norm1(src, init_params)
         else:
             src1 = src
+        if init_params:
+            self.init_params(src)
+
+        if self.competition is not None:
+            comp = self.competition(src)
+            comp = F.softmax(comp, dim=2)
+            comp = comp.unsqueeze(-1).repeat(
+                1, 1, 1, self.din // self.num_modules
+            )
+            comp = comp.view((src.shape[0], src.shape[1], self.din))
+        else:
+            comp = None
 
         output, self_attn = self.self_att(
             src1,
@@ -248,10 +280,12 @@ class TransformerEncoderLayer(nn.Module):
         )
 
         # add & norm
-        src = src + self.dropout1(output)
+        if comp is None:
+            src = src + self.dropout1(output)
+        else:
+            src = src + self.dropout1(output) * comp
         if not self.normalize_before:
             src = self.norm1(src, init_params)
-        src = self.norm1(src, init_params=init_params)
 
         if self.normalize_before:
             src1 = self.norm2(src, init_params)
@@ -263,9 +297,8 @@ class TransformerEncoderLayer(nn.Module):
         output = src + self.dropout2(output)
         if not self.normalize_before:
             output = self.norm2(output, init_params)
-        output = self.norm2(output, init_params=init_params)
 
-        if self.use_group_comm:
+        if self.use_group_comm and self.num_modules > 1:
             residual = output * 1.0
             output = self.group_comm(output, init_params=init_params)
             output = self.dropout_comm(output)
@@ -415,8 +448,17 @@ class TransformerDecoderLayer(nn.Module):
             d_ffn=d_ffn, dropout=dropout, activation=activation, nb=num_modules,
         )
 
+        self.num_modules = num_modules
+        self.d_ffn = d_ffn
+
+        self.competition = None
+        # if num_modules > 1:
+        #     self.competition = GroupLinearLayer(d_ffn, num_modules, num_modules, a=0.05)
+        # else:
+        #     self.competition = None
+
         self.use_group_comm = use_group_comm
-        if use_group_comm:
+        if use_group_comm and num_modules > 1:
             self.group_comm = GroupCommunication(d_ffn, num_modules, nhead)
             self.norm_comm = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
             self.dropout_comm = torch.nn.Dropout(dropout)
@@ -430,6 +472,15 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout3 = torch.nn.Dropout(dropout)
 
         self.normalize_before = normalize_before
+
+    def init_params(self, first_input):
+        self.din = first_input.shape[-1]
+        if self.num_modules > 1:
+            self.competition = GroupLinear(
+                self.din, self.num_modules, self.num_modules, a=0.05
+            ).to(first_input.device)
+        else:
+            self.competition = None
 
     def forward(
         self,
@@ -462,6 +513,19 @@ class TransformerDecoderLayer(nn.Module):
         else:
             tgt1 = tgt
 
+        if init_params:
+            self.init_params(tgt)
+
+        if self.competition is not None:
+            comp = self.competition(tgt1)
+            comp = F.softmax(comp, dim=2)
+            comp = comp.unsqueeze(-1).repeat(
+                1, 1, 1, self.din // self.num_modules
+            )
+            comp = comp.view((tgt1.shape[0], tgt1.shape[1], self.din))
+        else:
+            comp = None
+
         # self-attention over the target sequence
         tgt2, self_attn = self.self_attn(
             query=tgt1,
@@ -473,7 +537,10 @@ class TransformerDecoderLayer(nn.Module):
         )
 
         # add & norm
-        tgt = tgt + self.dropout1(tgt2)
+        if comp is None:
+            tgt = tgt + self.dropout1(tgt2)
+        else:
+            tgt = tgt + self.dropout1(tgt2) * comp
         if not self.normalize_before:
             tgt = self.norm1(tgt, init_params)
 
@@ -481,7 +548,6 @@ class TransformerDecoderLayer(nn.Module):
             tgt1 = self.norm2(tgt, init_params)
         else:
             tgt1 = tgt
-
         # multi-head attention over the target sequence and encoder states
         tgt2, multihead_attention = self.mutihead_attn(
             query=tgt1,
@@ -493,7 +559,10 @@ class TransformerDecoderLayer(nn.Module):
         )
 
         # add & norm
-        tgt = tgt + self.dropout2(tgt2)
+        if comp is None:
+            tgt = tgt + self.dropout2(tgt2)
+        else:
+            tgt = tgt + self.dropout2(tgt2) * comp
         if not self.normalize_before:
             tgt = self.norm2(tgt, init_params)
 
@@ -505,11 +574,14 @@ class TransformerDecoderLayer(nn.Module):
         tgt = self.pos_ffn(tgt1, init_params)
 
         # add & norm
-        tgt = tgt + self.dropout3(tgt2)
+        if comp is None:
+            tgt = tgt + self.dropout3(tgt2)
+        else:
+            tgt = tgt + self.dropout3(tgt2) * comp
         if not self.normalize_before:
             tgt = self.norm3(tgt, init_params)
 
-        if self.use_group_comm:
+        if self.use_group_comm and self.num_modules > 1:
             residual = tgt * 1.0
             tgt = self.group_comm(tgt, init_params=init_params)
             tgt = self.dropout_comm(tgt)
