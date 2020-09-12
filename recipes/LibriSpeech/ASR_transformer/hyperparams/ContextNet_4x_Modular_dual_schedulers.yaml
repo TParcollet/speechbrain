@@ -16,7 +16,7 @@ csv_test: !ref <data_folder>/test-clean.csv
 # Training parameters
 number_of_epochs: 100
 batch_size: 32
-lr: 0.001
+lr: 1
 ctc_weight: 0.3
 gradient_accumulation: 1
 device: 'cuda'
@@ -69,29 +69,27 @@ tokenizer: !new:speechbrain.tokenizers.SentencePiece.SentencePiece
     eos_id: !ref <eos_index>
     unk_id: !ref <unk_id>
 
-CNN: !new:speechbrain.lobes.models.convolution.ConvolutionFrontEnd
+CNN: !new:speechbrain.lobes.models.ContextNet.ContextNet
+    alpha: !ref <alpha>
     dropout: !ref <dropout>
-    norm: !name:speechbrain.nnet.normalization.LayerNorm
-    num_blocks: 2
-    num_layers_per_block: 1
-    out_channels: (256, 256)
-    strides: (2, 2)
-    residuals: (False, False)
-    dilations: (1, 1)
-    kernel_sizes: (3, 3)
+    # norm: !name:speechbrain.nnet.normalization.LayerNorm
+    num_blocks: 9
+    conv_channels: (256, 256, 256, 256, 512, 512, 512, 512, 512)
+    # out_channels: 512
+    strides: (1, 2, 1, 1, 1, 1, 1, 2, 1)
 
 Transformer: !new:speechbrain.lobes.models.transformer.TransformerASR.TransformerASR # yamllint disable-line rule:line-length
     tgt_vocab: !ref <output_neurons>
-    d_model: 512
-    nhead: 8
-    num_encoder_layers: 12
-    num_decoder_layers: 6
-    d_ffn: 2048
+    d_model: 768
+    nhead: 16
+    num_encoder_layers: 8
+    num_decoder_layers: 4
+    d_ffn: 3072
     dropout: 0.0
     activation: !name:torch.nn.GELU
-    num_modules: 1
-    use_group_comm: False
-    normalize_before: False
+    num_modules: 2
+    use_group_comm: True
+    normalize_before: True
 
 ctc_lin: !new:speechbrain.nnet.linear.Linear
     n_neurons: !ref <output_neurons>
