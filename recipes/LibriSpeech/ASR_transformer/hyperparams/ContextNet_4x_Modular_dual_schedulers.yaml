@@ -18,7 +18,7 @@ number_of_epochs: 100
 batch_size: 32
 lr: 0.001
 ctc_weight: 0.3
-gradient_accumulation: 4
+gradient_accumulation: 1
 device: 'cuda'
 multigpu: True
 auto_mix_precision: False
