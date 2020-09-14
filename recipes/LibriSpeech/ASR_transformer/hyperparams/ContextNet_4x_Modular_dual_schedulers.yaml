@@ -15,10 +15,10 @@ csv_test: !ref <data_folder>/test-clean.csv
 
 # Training parameters
 number_of_epochs: 100
-batch_size: 16
+batch_size: 64
 lr: 1
 ctc_weight: 0.3
-gradient_accumulation: 2
+gradient_accumulation: 4
 device: 'cuda'
 multigpu: True
 auto_mix_precision: False
@@ -80,14 +80,14 @@ CNN: !new:speechbrain.lobes.models.ContextNet.ContextNet
 
 Transformer: !new:speechbrain.lobes.models.transformer.TransformerASR.TransformerASR # yamllint disable-line rule:line-length
     tgt_vocab: !ref <output_neurons>
-    d_model: 648
-    nhead: 72
-    num_encoder_layers: 12
-    num_decoder_layers: 6
-    d_ffn: 2592
+    d_model: 768
+    nhead: 16
+    num_encoder_layers: 10
+    num_decoder_layers: 5
+    d_ffn: 3072
     dropout: 0.0
     activation: !name:torch.nn.GELU
-    num_modules: 6
+    num_modules: 2
     use_group_comm: True
     normalize_before: True
 
@@ -144,7 +144,7 @@ compute_features: !new:speechbrain.lobes.features.fbank.Fbank
 train_loader: !new:speechbrain.data_io.data_io.DataLoaderFactory
     csv_file: !ref <csv_train>
     batch_size: !ref <batch_size>
-    sentence_sorting: random
+    sentence_sorting: ascending
     output_folder: !ref <output_folder>
     csv_read: [wav, wrd]
     add_padding_label: True
