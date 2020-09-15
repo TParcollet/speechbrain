@@ -639,9 +639,10 @@ class TransformerDecoder(nn.Module):
                     dropout=dropout,
                     activation=activation,
                     normalize_before=normalize_before,
-                    num_modules=num_modules
-                    if (j > 1 and j < num_layers - 1)
-                    else 1,
+                    # num_modules=num_modules
+                    # if (j > 1 and j < num_layers - 1)
+                    # else 1,
+                    num_modules=1,
                     use_group_comm=use_group_comm,
                 )
                 for j in range(num_layers)
