@@ -20,6 +20,7 @@ from speechbrain.lobes.models.transformer.Transformer import (
     get_key_padding_mask,
     get_lookahead_mask,
 )
+from speechbrain.decoders.ctc import ctc_greedy_decode
 
 # This hack needed to import data preparation script from ..
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -77,7 +78,6 @@ test_search = S2STransformerBeamSearch(
     length_normalization=params.length_normalization,
     length_rewarding=params.length_rewarding,
 )
-
 
 # Define training procedure
 class ASR(sb.core.Brain):
@@ -175,7 +175,38 @@ class ASR(sb.core.Brain):
 
         elif stage == "test":
             torch.cuda.empty_cache()
-            hyps, _ = test_search(enc_out.detach(), wav_lens)
+            # hyps, _ = test_search(enc_out.detach(), wav_lens)
+            hyps = ctc_greedy_decode(
+                p_ctc, wav_lens, blank_id=params.blank_index
+            )
+            ctc_samples = torch.argmax(p_ctc, -1)
+            ctc_samples = params.tokenizer(ctc_samples, wav_lens, task="decode")
+            decoded_sample = params.tokenizer(hyps, task="decode_from_list")
+            target = params.tokenizer(target_chars, seq_lengths, task="decode")
+
+            for i, sample in enumerate(ctc_samples):
+                print("=" * 100)
+                print("ctc sample")
+                print("+" * len(sample))
+                print(sample)
+                print("+" * len(sample))
+                print("target")
+                print("+" * len(target[i]))
+                print(target[i])
+
+                with open("ctc_samples.txt", "a") as f:
+                    f.write("=" * 100 + "\n")
+                    f.write("ctc sample" + "\n")
+                    f.write("+" * len(sample) + "\n")
+                    f.write(sample + "\n")
+                    f.write("+" * len(sample) + "\n")
+                    f.write("greedy search" + "\n")
+                    f.write("+" * len(target[i]) + "\n")
+                    f.write(" ".join(decoded_sample[i]) + "\n")
+                    f.write("+" * len(target[i]) + "\n")
+                    f.write("target" + "\n")
+                    f.write("+" * len(target[i]) + "\n")
+                    f.write(target[i] + "\n")
             return p_ctc, p_seq, wav_lens, hyps, target_chars, seq_lengths
 
         return p_ctc, p_seq, wav_lens, target_chars, seq_lengths

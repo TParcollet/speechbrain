@@ -272,8 +272,6 @@ class SentencePiece:
             # find the absolute batch lengths and do decoding
             batch_lens = (batch_lens * batch.shape[1]).int()
             return [
-                self.sp.decode_ids(
-                    utt_seq[: batch_lens[i]].int().tolist()
-                ).split(" ")
+                self.sp.decode_ids(utt_seq[: batch_lens[i]].int().tolist())
                 for i, utt_seq in enumerate(batch)
             ]
