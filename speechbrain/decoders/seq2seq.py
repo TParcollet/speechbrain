@@ -6,6 +6,7 @@ Authors
 """
 import torch
 import numpy as np
+from speechbrain.decoders.ctc import CTCPrefixScorer
 
 
 class S2SBaseSearcher(torch.nn.Module):
@@ -330,6 +331,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
         length_rewarding=0,
         lm_weight=0.0,
         lm_modules=None,
+        ctc_weight=0.0,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
@@ -354,9 +356,11 @@ class S2SBeamSearcher(S2SBaseSearcher):
         self.max_attn_shift = max_attn_shift
         self.lm_weight = lm_weight
         self.lm_modules = lm_modules
+        self.ctc_weight = ctc_weight
 
         # to initialize the params of LM modules
         self.init_lm_params = True
+        self.init_ctc_params = True
         self.minus_inf = minus_inf
 
     def _check_full_beams(self, hyps, beam_size):
@@ -534,6 +538,14 @@ class S2SBeamSearcher(S2SBaseSearcher):
         if self.lm_weight > 0:
             lm_memory = self.reset_lm_mem(batch_size * self.beam_size, device)
 
+        if self.ctc_weight > 0:
+            # (batch_size * beam_size, L, vocab_size)
+            ctc_outputs = self.ctc_forward_step(enc_states)
+            ctc_scorer = CTCPrefixScorer(
+                ctc_outputs, enc_lens, batch_size, 0, self.eos_index
+            )
+            ctc_memory = None
+
         # Using bos as the first input
         inp_tokens = (
             torch.zeros(batch_size * self.beam_size)
@@ -613,6 +625,14 @@ class S2SBeamSearcher(S2SBaseSearcher):
                 )
                 log_probs = log_probs + self.lm_weight * lm_log_probs
 
+            # adding CTC scores to log_prob if ctc_weight > 0
+            if self.ctc_weight > 0:
+                g = alived_seq if t > 0 else inp_tokens.unsqueeze(1)
+                ctc_log_probs, ctc_memory = ctc_scorer.forward_step(
+                    g, ctc_memory
+                )
+                log_probs = log_probs + self.ctc_weight * ctc_log_probs
+
             scores = sequence_scores.unsqueeze(1).expand(-1, vocab_size)
             scores = scores + log_probs
 
@@ -624,6 +644,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
             scores, candidates = scores.view(batch_size, -1).topk(
                 self.beam_size, dim=-1
             )
+            # print("candidates", candidates, 'seq_scores', sequence_scores.shape, 'scores', scores.shape)
 
             # The input for the next step, also the output of current step.
             inp_tokens = (candidates % vocab_size).view(
@@ -647,6 +668,9 @@ class S2SBeamSearcher(S2SBaseSearcher):
             memory = self.permute_mem(memory, index=predecessors)
             if self.lm_weight > 0:
                 lm_memory = self.permute_lm_mem(lm_memory, index=predecessors)
+
+            if self.ctc_weight > 0:
+                ctc_memory = ctc_scorer.permute_mem(ctc_memory, candidates)
 
             # If using_max_attn_shift, thne the previous attn peak has to be permuted too.
             if self.using_max_attn_shift:
@@ -851,6 +875,7 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
         length_rewarding=0,
         lm_weight=0.0,
         lm_modules=None,
+        ctc_weight=0.0,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
@@ -870,6 +895,7 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
             length_rewarding,
             lm_weight,
             lm_modules,
+            ctc_weight,
             using_max_attn_shift,
             max_attn_shift,
         )
@@ -1049,6 +1075,7 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
         length_rewarding=0,
         lm_weight=0.0,
         lm_modules=None,
+        ctc_weight=0.0,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
