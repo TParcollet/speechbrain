@@ -6,6 +6,7 @@ Authors
 """
 import torch
 import numpy as np
+from speechbrain.decoders.ctc import CTCPrefixScoreTH
 
 
 class S2SBaseSearcher(torch.nn.Module):
@@ -319,6 +320,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
         modules,
         bos_index,
         eos_index,
+        blank_index,
         min_decode_ratio,
         max_decode_ratio,
         beam_size,
@@ -330,6 +332,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
         length_rewarding=0,
         lm_weight=0.0,
         lm_modules=None,
+        ctc_weight=0.,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
@@ -337,6 +340,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
         super(S2SBeamSearcher, self).__init__(
             modules, bos_index, eos_index, min_decode_ratio, max_decode_ratio
         )
+        self.blank_index = blank_index
         self.beam_size = beam_size
         self.topk = topk
         self.return_log_probs = return_log_probs
@@ -357,6 +361,9 @@ class S2SBeamSearcher(S2SBaseSearcher):
 
         # to initialize the params of LM modules
         self.init_lm_params = True
+        # ctc already initalized
+        self.init_ctc_params = False
+        self.ctc_weight = ctc_weight
         self.minus_inf = minus_inf
 
     def _check_full_beams(self, hyps, beam_size):
@@ -525,14 +532,27 @@ class S2SBeamSearcher(S2SBaseSearcher):
         device = enc_states.device
         batch_size = enc_states.shape[0]
 
-        # Inflate the enc_states and enc_len by beam_size times
-        enc_states = inflate_tensor(enc_states, times=self.beam_size, dim=0)
-        enc_lens = inflate_tensor(enc_lens, times=self.beam_size, dim=0)
-
         memory = self.reset_mem(batch_size * self.beam_size, device=device)
 
         if self.lm_weight > 0:
             lm_memory = self.reset_lm_mem(batch_size * self.beam_size, device)
+
+        if self.ctc_weight > 0:
+            # (batch_size * beam_size, L, vocab_size)
+            ctc_outputs = self.ctc_forward_step(enc_states)
+            ctc_scorer = CTCPrefixScoreTH(
+                ctc_outputs,
+                enc_lens,
+                # batch_size,
+                # self.beam_size,
+                0,
+                self.eos_index,
+            )
+            ctc_memory = None
+
+        # Inflate the enc_states and enc_len by beam_size times
+        enc_states = inflate_tensor(enc_states, times=self.beam_size, dim=0)
+        enc_lens = inflate_tensor(enc_lens, times=self.beam_size, dim=0)
 
         # Using bos as the first input
         inp_tokens = (
@@ -613,6 +633,16 @@ class S2SBeamSearcher(S2SBaseSearcher):
                 )
                 log_probs = log_probs + self.lm_weight * lm_log_probs
 
+            # adding CTC scores to log_prob if ctc_weight > 0
+            if self.ctc_weight > 0:
+                g = memory
+                ctc_log_probs, ctc_memory = ctc_scorer(
+                    g, ctc_memory
+                )
+                log_probs = (
+                    1 - self.ctc_weight
+                ) * log_probs + self.ctc_weight * ctc_log_probs
+
             scores = sequence_scores.unsqueeze(1).expand(-1, vocab_size)
             scores = scores + log_probs
 
@@ -647,6 +677,8 @@ class S2SBeamSearcher(S2SBaseSearcher):
             memory = self.permute_mem(memory, index=predecessors)
             if self.lm_weight > 0:
                 lm_memory = self.permute_lm_mem(lm_memory, index=predecessors)
+            if self.ctc_weight > 0:
+                ctc_memory = ctc_scorer.index_select_state(ctc_memory, candidates)
 
             # If using_max_attn_shift, thne the previous attn peak has to be permuted too.
             if self.using_max_attn_shift:
@@ -816,15 +848,16 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
     >>> import speechbrain as sb
     >>> emb = torch.nn.Embedding(5, 3)
     >>> dec = sb.nnet.RNN.AttentionalRNNDecoder("gru", "content", 3, 3, 1)
-    >>> lin = sb.nnet.linear.Linear(5)
+    >>> dec_lin = sb.nnet.linear.Linear(5)
+    >>> ctc_lin = sb.nnet.linear.Linear(5)
     >>> act = sb.nnet.activations.Softmax(apply_log=True)
     >>> inp = torch.randint(low=0, high=5, size=(2, 3))
     >>> enc = torch.rand([2, 6, 7])
     >>> wav_len = torch.rand([2])
     >>> e = emb(inp)
     >>> h, _ = dec(e, enc, wav_len, init_params=True)
-    >>> log_probs = act(lin(h, init_params=True))
-    >>> modules = [emb, dec, lin]
+    >>> log_probs = act(dec_lin(h, init_params=True))
+    >>> modules = [emb, dec, dec_lin, ctc_lin]
     >>> searcher = S2SRNNBeamSearcher(
     ... modules,
     ... bos_index=4,
@@ -845,12 +878,13 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
         beam_size,
         topk=1,
         return_log_probs=False,
-        using_eos_threshold=True,
+        using_eos_threshold=False,
         eos_threshold=1.5,
-        length_normalization=True,
+        length_normalization=False,
         length_rewarding=0,
         lm_weight=0.0,
         lm_modules=None,
+        ctc_weight=0.0,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
@@ -870,12 +904,14 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
             length_rewarding,
             lm_weight,
             lm_modules,
+            ctc_weight,
             using_max_attn_shift,
             max_attn_shift,
         )
         self.emb = self.modules[0]
         self.dec = self.modules[1]
         self.fc = self.modules[2]
+        self.ctc_fc = self.modules[3]
         self.softmax = torch.nn.LogSoftmax(dim=-1)
 
     def reset_mem(self, batch_size, device):
@@ -1038,6 +1074,7 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
         modules,
         bos_index,
         eos_index,
+        blank_index,
         min_decode_ratio,
         max_decode_ratio,
         beam_size,
@@ -1049,6 +1086,7 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
         length_rewarding=0,
         lm_weight=0.0,
         lm_modules=None,
+        ctc_weight=0.0,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
@@ -1057,6 +1095,7 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
             modules,
             bos_index,
             eos_index,
+            blank_index,
             min_decode_ratio,
             max_decode_ratio,
             beam_size,
@@ -1068,12 +1107,14 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
             length_rewarding,
             lm_weight,
             lm_modules,
+            ctc_weight,
             using_max_attn_shift,
             max_attn_shift,
         )
 
         self.model = modules[0]
         self.fc = modules[1]
+        self.ctc_fc = modules[2]
         self.softmax = torch.nn.LogSoftmax(dim=-1)
 
     def reset_mem(self, batch_size, device):
@@ -1082,6 +1123,12 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
     def permute_mem(self, memory, index):
         memory = torch.index_select(memory, dim=0, index=index)
         return memory
+
+    def ctc_forward_step(self, x):
+        logits = self.ctc_fc(x)
+        log_probs = self.softmax(logits)
+
+        return log_probs
 
     def forward_step(self, inp_tokens, memory, enc_states, enc_lens):
         prob_dist, memory = _model_decode(

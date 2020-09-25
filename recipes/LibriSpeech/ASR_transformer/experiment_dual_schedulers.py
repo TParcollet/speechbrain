@@ -58,27 +58,30 @@ checkpointer = sb.utils.checkpoints.Checkpointer(
 
 # Define a beam search according to this recipe
 valid_search = S2STransformerBeamSearch(
-    modules=[params.Transformer, params.seq_lin],
+    modules=[params.Transformer, params.seq_lin, params.ctc_lin],
     bos_index=params.bos_index,
     eos_index=params.eos_index,
+    blank_index=params.blank_index,
     min_decode_ratio=0,
     max_decode_ratio=1,
     beam_size=params.valid_beam_size,
     length_normalization=params.length_normalization,
     length_rewarding=params.length_rewarding,
+    ctc_weight=0.5,
 )
 
 test_search = S2STransformerBeamSearch(
-    modules=[params.Transformer, params.seq_lin],
+    modules=[params.Transformer, params.seq_lin, params.ctc_lin],
     bos_index=params.bos_index,
     eos_index=params.eos_index,
+    blank_index=params.blank_index,
     min_decode_ratio=0,
     max_decode_ratio=1,
     beam_size=params.test_beam_size,
     length_normalization=params.length_normalization,
     length_rewarding=params.length_rewarding,
-    # ctc_weight=0.5,
-    using_max_attn_shift=False,
+    ctc_weight=.7,
+    using_max_attn_shift=False
 )
 
 
@@ -178,40 +181,38 @@ class ASR(sb.core.Brain):
 
         elif stage == "test":
             torch.cuda.empty_cache()
-            # hyps, _ = test_search(enc_out.detach(), wav_lens)
-            hyps = ctc_greedy_decode(
-                p_ctc, wav_lens, blank_id=params.blank_index
-            )
-            ctc_samples = torch.argmax(p_ctc, -1)
-            ctc_samples = params.tokenizer(ctc_samples, wav_lens, task="decode")
-            decoded_sample = params.tokenizer(hyps, task="decode_from_list")
-            target = params.tokenizer(target_chars, seq_lengths, task="decode")
+            hyps, _ = test_search(enc_out.detach(), wav_lens)
+            # hyps = ctc_greedy_decode(p_ctc, wav_lens, blank_id=params.blank_index)
+            # ctc_samples = torch.argmax(p_ctc, -1)
+            # ctc_samples = params.tokenizer(ctc_samples, wav_lens, task="decode")
+            # decoded_sample = params.tokenizer(hyps, task="decode_from_list")
+            # target = params.tokenizer(target_chars, seq_lengths, task="decode")
 
-            for i, sample in enumerate(ctc_samples):
-                print("=" * 100)
-                print("ctc sample")
-                print("+" * len(sample))
-                print(sample)
-                print("+" * len(sample))
-                print("target")
-                print("+" * len(target[i]))
-                print(target[i])
+            # for i, sample in enumerate(ctc_samples):
+            #     print("=" * 100)
+            #     print("ctc sample")
+            #     print("+" * len(sample))
+            #     print(sample)
+            #     print("+" * len(sample))
+            #     print("target")
+            #     print("+" * len(target[i]))
+            #     print(target[i])
 
-                with open("ctc_samples_baseline.txt", "a") as f:
-                    sample = " ".join(sample)
-                    t = " ".join(target[i])
-                    f.write("=" * 100 + "\n")
-                    f.write("ctc sample" + "\n")
-                    f.write("+" * len(sample) + "\n")
-                    f.write(sample + "\n")
-                    f.write("+" * len(sample) + "\n")
-                    f.write("greedy search" + "\n")
-                    f.write("+" * len(t) + "\n")
-                    f.write(" ".join(decoded_sample[i]) + "\n")
-                    f.write("+" * len(t) + "\n")
-                    f.write("target" + "\n")
-                    f.write("+" * len(t) + "\n")
-                    f.write(t + "\n")
+            #     with open("ctc_samples_baseline.txt", "a") as f:
+            #         sample = " ".join(sample)
+            #         t = " ".join(target[i])
+            #         f.write("=" * 100 + "\n")
+            #         f.write("ctc sample" + "\n")
+            #         f.write("+" * len(sample) + "\n")
+            #         f.write(sample + "\n")
+            #         f.write("+" * len(sample) + "\n")
+            #         f.write("greedy search" + "\n")
+            #         f.write("+" * len(t) + "\n")
+            #         f.write(" ".join(decoded_sample[i]) + "\n")
+            #         f.write("+" * len(t) + "\n")
+            #         f.write("target" + "\n")
+            #         f.write("+" * len(t) + "\n")
+            #         f.write(t + "\n")
             return p_ctc, p_seq, wav_lens, hyps, target_chars, seq_lengths
 
         return p_ctc, p_seq, wav_lens, target_chars, seq_lengths
@@ -262,6 +263,10 @@ class ASR(sb.core.Brain):
 
                 target_chars = undo_padding(target_chars, target_lens)
                 target_chars = convert_index_to_lab(target_chars, ind2lab)
+
+                for i, seq in enumerate(char_seq):
+                    print("pred: {}".format(seq))
+                    print("target: {}".format(target_chars[i]))
 
                 wer_stats = edit_distance.wer_details_for_batch(
                     ids, target_chars, char_seq, compute_alignments=True

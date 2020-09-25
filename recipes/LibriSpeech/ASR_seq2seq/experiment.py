@@ -13,8 +13,12 @@ from speechbrain.data_io.data_io import merge_char
 
 from speechbrain.decoders.seq2seq import S2SRNNGreedySearcher
 from speechbrain.decoders.seq2seq import S2SRNNBeamSearcher
+
+# from speechbrain.decoders.ctc import ctc_greedy_decode
 from speechbrain.decoders.decoders import undo_padding
 from speechbrain.utils.train_logger import summarize_error_rate
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # set your device id
 
 # This hack needed to import data preparation script from ..
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +40,81 @@ sb.core.create_experiment_directory(
 modules = torch.nn.ModuleList(
     [params.enc, params.emb, params.dec, params.ctc_lin, params.seq_lin]
 )
+
+
+class MyBeamSearcher(S2SRNNBeamSearcher):
+    def lm_forward_step(self, inp_tokens, memory):
+        hs = memory
+        (model,) = self.lm_modules
+        logits, hs = model(inp_tokens, hx=hs, init_params=self.init_lm_params)
+        log_probs = params.log_softmax(logits)
+
+        # set it to false after initialization
+        if self.init_lm_params:
+            self.init_lm_params = False
+        return log_probs, hs
+
+    def ctc_forward_step(self, x):
+        logits = self.ctc_fc(x, self.init_ctc_params)
+        log_probs = params.log_softmax(logits)
+
+        return log_probs
+
+    def permute_lm_mem(self, memory, index):
+        # This is to permute lm memory to synchronize with current index during beam search.
+        # The order of beams will be shuffled by scores every timestep to allow batched beam search.
+        # Further details please refer to speechbrain/decoder/seq2seq.py.
+
+        if isinstance(memory, tuple):
+            memory_0 = torch.index_select(memory[0], dim=1, index=index)
+            memory_1 = torch.index_select(memory[1], dim=1, index=index)
+            memory = (memory_0, memory_1)
+        else:
+            memory = torch.index_select(memory, dim=1, index=index)
+        return memory
+
+    def reset_lm_mem(self, batch_size, device):
+        # set hidden_state=None, pytorch RNN will automatically set it to zero vectors.
+        return None
+
+
+# Beamsearch with external LM
+if hasattr(params, "lm_ckpt_file"):
+
+    lm_modules = torch.nn.ModuleList([params.lm_model])
+    lm_modules.eval()
+
+    beam_searcher = MyBeamSearcher(
+        modules=[params.emb, params.dec, params.seq_lin, params.ctc_lin],
+        bos_index=params.bos_index,
+        eos_index=params.eos_index,
+        min_decode_ratio=0,
+        max_decode_ratio=1,
+        beam_size=params.beam_size,
+        eos_threshold=params.eos_threshold,
+        using_max_attn_shift=params.using_max_attn_shift,
+        max_attn_shift=params.max_attn_shift,
+        lm_weight=params.lm_weight,
+        ctc_weight=params.ctc_weight,
+        lm_modules=lm_modules,
+    )
+
+else:
+    # Beamsearch without LM
+    beam_searcher = S2SRNNBeamSearcher(
+        modules=[params.emb, params.dec, params.seq_lin, params.ctc_lin],
+        bos_index=params.bos_index,
+        eos_index=params.eos_index,
+        min_decode_ratio=0,
+        max_decode_ratio=1,
+        beam_size=params.beam_size,
+        eos_threshold=params.eos_threshold,
+        using_max_attn_shift=params.using_max_attn_shift,
+        max_attn_shift=params.max_attn_shift,
+    )
+
+
+# Greedy Search (used for validation only)
 greedy_searcher = S2SRNNGreedySearcher(
     modules=[params.emb, params.dec, params.seq_lin],
     bos_index=params.bos_index,
@@ -106,6 +185,9 @@ class ASR(sb.core.Brain):
             return p_seq, wav_lens, hyps
         elif stage == "test":
             hyps, scores = beam_searcher(x, wav_lens)
+            # ctc greedy
+            # logits = beam_searcher.ctc_forward_step(x)
+            # hyps = ctc_greedy_decode(logits, wav_lens, 0)
             return p_seq, wav_lens, hyps
 
     def compute_objectives(self, predictions, targets, stage="train"):
