@@ -4,9 +4,6 @@ import sys
 import torch
 import speechbrain as sb
 
-# This flag enable the inbuilt cudnn auto-tuner
-torch.backends.cudnn.benchmark = True
-
 # This hack needed to import data preparation script from ..
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(current_dir))
@@ -31,12 +28,13 @@ prepare_voxceleb(
     splits=["train", "dev"],
     split_ratio=[90, 10],
     seg_dur=300,
+    vad=False,
     rand_seed=params.seed,
 )
 
 
-# Trains speaker embeddings
-class EmbeddingBrain(sb.core.Brain):
+# Trains xvector model
+class XvectorBrain(sb.core.Brain):
     def compute_forward(self, x, stage="train", init_params=False):
         id, wavs, lens = x
 
@@ -57,9 +55,9 @@ class EmbeddingBrain(sb.core.Brain):
         feats = params.compute_features(wavs, init_params)
         feats = params.mean_var_norm(feats, lens)
 
-        # Embeddings + speaker classifier
-        embeddings = params.embedding_model(feats, init_params=init_params)
-        outputs = params.classifier(embeddings, init_params)
+        # Xvector + speaker classifier
+        x_vect = params.xvector_model(feats, init_params=init_params)
+        outputs = params.classifier(x_vect, init_params)
 
         return outputs, lens
 
@@ -94,21 +92,22 @@ class EmbeddingBrain(sb.core.Brain):
 train_set = params.train_loader()
 valid_set = params.valid_loader()
 
-# Models to train
-modules = [params.embedding_model, params.classifier]
+# Xvector Model
+modules = [params.xvector_model, params.classifier]
 first_x, first_y = next(iter(train_set))
+if hasattr(params, "augmentation"):
+    modules.append(params.augmentation)
 
-
-# Object initialization for training the embeddings
-embedding_brain = EmbeddingBrain(
+# Object initialization for training xvector model
+xvect_brain = XvectorBrain(
     modules=modules, optimizer=params.optimizer, first_inputs=[first_x],
 )
 
 # Recover checkpoints
 params.checkpointer.recover_if_possible()
 
-# Train the model
-embedding_brain.fit(
+# Train the Xvector model
+xvect_brain.fit(
     params.epoch_counter, train_set=train_set, valid_set=valid_set,
 )
-print("Speaker embedding training completed!")
+print("Xvector model training completed!")

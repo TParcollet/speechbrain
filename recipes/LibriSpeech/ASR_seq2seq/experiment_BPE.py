@@ -9,11 +9,12 @@ import speechbrain.utils.edit_distance as edit_distance
 from speechbrain.data_io.data_io import convert_index_to_lab
 from speechbrain.data_io.data_io import prepend_bos_token
 from speechbrain.data_io.data_io import append_eos_token
-from speechbrain.data_io.data_io import merge_char
+from speechbrain.data_io.data_io import split_word
 
 from speechbrain.decoders.seq2seq import S2SRNNGreedySearcher
 from speechbrain.decoders.seq2seq import S2SRNNBeamSearcher
 from speechbrain.decoders.decoders import undo_padding
+from speechbrain.utils.checkpoints import ckpt_recency
 from speechbrain.utils.train_logger import summarize_error_rate
 
 # This hack needed to import data preparation script from ..
@@ -71,10 +72,24 @@ checkpointer = sb.utils.checkpoints.Checkpointer(
 class ASR(sb.core.Brain):
     def compute_forward(self, x, y, stage="train", init_params=False):
         ids, wavs, wav_lens = x
-        ids, chars, char_lens = y
-
+        ids, words, word_lens = y
         wavs, wav_lens = wavs.to(params.device), wav_lens.to(params.device)
-        chars, char_lens = chars.to(params.device), char_lens.to(params.device)
+        if stage == "train":
+            if hasattr(params, "env_corrupt"):
+                wavs_noise = params.env_corrupt(wavs, wav_lens, init_params)
+                wavs = torch.cat([wavs, wavs_noise], dim=0)
+                wav_lens = torch.cat([wav_lens, wav_lens])
+                words = torch.cat([words, words], dim=0)
+                word_lens = torch.cat([word_lens, word_lens])
+            index2lab = params.train_loader.label_dict["wrd"]["index2lab"]
+        elif stage == "valid":
+            index2lab = params.valid_loader.label_dict["wrd"]["index2lab"]
+        elif stage == "test":
+            index2lab = params.test_loader.label_dict["wrd"]["index2lab"]
+        bpe, _ = params.bpe_tokenizer(
+            words, word_lens, index2lab, task="encode", init_params=init_params
+        )
+        bpe = bpe.to(params.device)
 
         if hasattr(params, "augmentation"):
             wavs = params.augmentation(wavs, wav_lens, init_params)
@@ -83,7 +98,7 @@ class ASR(sb.core.Brain):
         x = params.enc(feats, init_params=init_params)
 
         # Prepend bos token at the beginning
-        y_in = prepend_bos_token(chars, bos_index=params.bos_index)
+        y_in = prepend_bos_token(bpe, bos_index=params.bos_index)
         e_in = params.emb(y_in, init_params=init_params)
         h, _ = params.dec(e_in, x, wav_lens, init_params)
 
@@ -113,32 +128,44 @@ class ASR(sb.core.Brain):
             stage == "train"
             and params.epoch_counter.current <= params.number_of_ctc_epochs
         ):
+            index2lab = params.train_loader.label_dict["wrd"]["index2lab"]
             p_ctc, p_seq, wav_lens = predictions
         elif stage == "train":
+            index2lab = params.train_loader.label_dict["wrd"]["index2lab"]
             p_seq, wav_lens = predictions
         else:
+            if stage == "valid":
+                index2lab = params.valid_loader.label_dict["wrd"]["index2lab"]
+            else:
+                index2lab = params.test_loader.label_dict["wrd"]["index2lab"]
             p_seq, wav_lens, hyps = predictions
 
-        ids, chars, char_lens = targets
-        chars, char_lens = chars.to(params.device), char_lens.to(params.device)
+        ids, words, word_lens = targets
+        bpe, bpe_lens = params.bpe_tokenizer(
+            words, word_lens, index2lab, task="encode"
+        )
+        bpe, bpe_lens = bpe.to(params.device), bpe_lens.to(params.device)
+        if hasattr(params, "env_corrupt") and stage == "train":
+            bpe = torch.cat([bpe, bpe], dim=0)
+            bpe_lens = torch.cat([bpe_lens, bpe_lens], dim=0)
 
         # Add char_lens by one for eos token
-        abs_length = torch.round(char_lens * chars.shape[1])
+        abs_length = torch.round(bpe_lens * bpe.shape[1])
 
         # Append eos token at the end of the label sequences
-        chars_with_eos = append_eos_token(
-            chars, length=abs_length, eos_index=params.eos_index
+        bpe_with_eos = append_eos_token(
+            bpe, length=abs_length, eos_index=params.eos_index
         )
 
         # convert to speechbrain-style relative length
-        rel_length = (abs_length + 1) / chars_with_eos.shape[1]
-        loss_seq = params.seq_cost(p_seq, chars_with_eos, length=rel_length)
+        rel_length = (abs_length + 1) / bpe_with_eos.shape[1]
+        loss_seq = params.seq_cost(p_seq, bpe_with_eos, length=rel_length)
 
         if (
             stage == "train"
             and params.epoch_counter.current <= params.number_of_ctc_epochs
         ):
-            loss_ctc = params.ctc_cost(p_ctc, chars, wav_lens, char_lens)
+            loss_ctc = params.ctc_cost(p_ctc, bpe, wav_lens, bpe_lens)
             loss = (
                 params.ctc_weight * loss_ctc
                 + (1 - params.ctc_weight) * loss_seq
@@ -148,18 +175,26 @@ class ASR(sb.core.Brain):
 
         stats = {}
         if stage != "train":
-            ind2lab = params.train_loader.label_dict["char"]["index2lab"]
-            char_seq = convert_index_to_lab(hyps, ind2lab)
-            word_seq = merge_char(char_seq)
-            chars = undo_padding(chars, char_lens)
-            chars = convert_index_to_lab(chars, ind2lab)
-            words = merge_char(chars)
+            # Prediction
+            word_seq = params.bpe_tokenizer(hyps, task="decode_from_list")
+            char_seq = split_word(word_seq)
+            # Truth
+            words = undo_padding(words, word_lens)
+            words = convert_index_to_lab(words, index2lab)
+            chars = split_word(words)
             cer_stats = edit_distance.wer_details_for_batch(
                 ids, chars, char_seq, compute_alignments=True
             )
             wer_stats = edit_distance.wer_details_for_batch(
                 ids, words, word_seq, compute_alignments=True
             )
+            # If needed, compute token error rate
+            if params.ter_eval:
+                bpe = undo_padding(bpe, bpe_lens)
+                ter_stats = edit_distance.wer_details_for_batch(
+                    ids, bpe, hyps, compute_alignments=True
+                )
+                stats["TER"] = ter_stats
             stats["CER"] = cer_stats
             stats["WER"] = wer_stats
         return loss, stats
@@ -187,7 +222,10 @@ class ASR(sb.core.Brain):
         epoch_stats = {"epoch": epoch, "lr": old_lr}
         params.train_logger.log_stats(epoch_stats, train_stats, valid_stats)
 
-        checkpointer.save_and_keep_only(meta={"WER": wer}, min_keys=["WER"])
+        checkpointer.save_and_keep_only(
+            meta={"WER": wer},
+            importance_keys=[ckpt_recency, lambda c: -c.meta["WER"]],
+        )
 
 
 # Prepare data
@@ -216,9 +254,9 @@ asr_brain = ASR(
 # Important: DataParallel MUST be called after the ASR (Brain) class init.
 if params.multigpu:
     params.enc = torch.nn.DataParallel(params.enc)
+    params.ctc_lin = torch.nn.DataParallel(params.ctc_lin)
     params.emb = torch.nn.DataParallel(params.emb)
     params.dec = torch.nn.DataParallel(params.dec)
-    params.ctc_lin = torch.nn.DataParallel(params.ctc_lin)
     params.seq_lin = torch.nn.DataParallel(params.seq_lin)
 
 # Load latest checkpoint to resume training
@@ -226,7 +264,7 @@ checkpointer.recover_if_possible()
 asr_brain.fit(params.epoch_counter, train_set, valid_set)
 
 # Load best checkpoint for evaluation
-checkpointer.recover_if_possible(min_key="WER")
+checkpointer.recover_if_possible(lambda c: -c.meta["WER"])
 test_stats = asr_brain.evaluate(params.test_loader())
 params.train_logger.log_stats(
     stats_meta={"Epoch loaded": params.epoch_counter.current},

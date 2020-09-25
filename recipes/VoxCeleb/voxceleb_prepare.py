@@ -33,13 +33,11 @@ def prepare_voxceleb(
     splits=["train", "dev", "test"],
     split_ratio=[90, 10],
     seg_dur=300,
-    amp_th=5e-04,
+    vad=False,
     rand_seed=1234,
 ):
     """
-    Prepares the csv files for the Voxceleb1 or Voxceleb2 datasets.
-    Please follow the instructions in the README.md file for
-    preparing Voxceleb2.
+    Prepares the csv files for the Voxceleb1 dataset.
 
     Arguments
     ---------
@@ -54,9 +52,8 @@ def prepare_voxceleb(
         List if int for train and validation splits
     seg_dur : int
         Segment duration of a chunk in milliseconds
-    amp_th : float
-        removes segments whose average amplitude is below the
-        given threshold.
+    vad : bool
+        To perform VAD or not
     rand_seed : int
         random seed
 
@@ -76,6 +73,7 @@ def prepare_voxceleb(
         "splits": splits,
         "split_ratio": split_ratio,
         "save_folder": save_folder,
+        "vad": vad,
         "seg_dur": seg_dur,
     }
 
@@ -86,6 +84,7 @@ def prepare_voxceleb(
     save_opt = os.path.join(save_folder, OPT_FILE)
     save_csv_train = os.path.join(save_folder, TRAIN_CSV)
     save_csv_dev = os.path.join(save_folder, DEV_CSV)
+    # save_csv_test = os.path.join(save_folder, TEST_CSV)
 
     # Check if this phase is already done (if so, skip it)
     if skip(splits, save_folder, conf):
@@ -98,7 +97,7 @@ def prepare_voxceleb(
     else:
         data_folder = [data_folder]
 
-    # _check_voxceleb1_folders(data_folder, splits)
+    _check_voxceleb1_folders(data_folder, splits)
 
     msg = "\tCreating csv file for the VoxCeleb1 Dataset.."
     logger.debug(msg)
@@ -109,15 +108,18 @@ def prepare_voxceleb(
     # Creating csv file for training data
     if "train" in splits:
         prepare_csv(
-            SAMPLERATE, seg_dur, wav_lst_train, save_csv_train, amp_th=amp_th
+            SAMPLERATE, seg_dur, wav_lst_train, save_csv_train,
         )
 
     if "dev" in splits:
         prepare_csv(
-            SAMPLERATE, seg_dur, wav_lst_dev, save_csv_dev, amp_th=amp_th,
+            SAMPLERATE, seg_dur, wav_lst_dev, save_csv_dev,
         )
 
     # Test can be used for verification
+    # if "enrol" in splits:
+    #    prepare_csv_enrol_test(data_folder, save_csv_enrol, 'enrol')
+
     if "test" in splits:
         prepare_csv_enrol_test(data_folder, save_folder)
 
@@ -163,7 +165,7 @@ def skip(splits, save_folder, conf):
     return skip
 
 
-def _check_voxceleb_folders(data_folders, splits):
+def _check_voxceleb1_folders(data_folders, splits):
     """
     Check if the data folder actually contains the Voxceleb1 dataset.
 
@@ -180,13 +182,12 @@ def _check_voxceleb_folders(data_folders, splits):
     for data_folder in data_folders:
 
         if "train" in splits:
-            folder_vox1 = os.path.join(data_folder, "wav", "id10001")
-            folder_vox2 = os.path.join(data_folder, "wav", "id00012")
-
-            if not os.path.exists(folder_vox1) or not os.path.exists(
-                folder_vox2
-            ):
-                err_msg = "the specified folder does not contain Voxceleb"
+            folder = os.path.join(data_folder, "wav", "id10001")
+            if not os.path.exists(folder):
+                err_msg = (
+                    "the folder %s does not exist (as it is expected in "
+                    "the Voxceleb dataset)" % folder
+                )
                 raise FileNotFoundError(err_msg)
 
         if "test" in splits:
@@ -210,8 +211,7 @@ def _check_voxceleb_folders(data_folders, splits):
 # Used for verification split
 def _get_utt_split_lists(data_folders, split_ratio):
     """
-    Tot. number of speakers vox1= 1211.
-    Tot. number of speakers vox2= 5994.
+    Tot. number of speakers = 1211.
     Splits the audio file list into train and dev.
     This function is useful when using verification split
     """
@@ -232,7 +232,6 @@ def _get_utt_split_lists(data_folders, split_ratio):
         # avoid test speakers for train and dev splits
         audio_files_list = []
         path = os.path.join(data_folder, "wav", "**", "*.wav")
-
         for f in glob.glob(path, recursive=True):
             spk_id = f.split("/wav/")[1].split("/")[0]
             if spk_id not in test_spks:
@@ -263,7 +262,9 @@ def _get_chunks(seg_dur, audio_id, audio_duration):
     return chunk_lst
 
 
-def prepare_csv(samplerate, seg_dur, wav_lst, csv_file, amp_th=0):
+def prepare_csv(
+    samplerate, seg_dur, wav_lst, csv_file, vad=False,
+):
     """
     Creates the csv file given a list of wav files.
 
@@ -273,9 +274,8 @@ def prepare_csv(samplerate, seg_dur, wav_lst, csv_file, amp_th=0):
         The list of wav files of a given data split.
     csv_file : str
         The path of the output csv file
-    amp_th: float
-        Threshold on the average amplitude on the chunk.
-        If under this threshold, the chunk is discarded.
+    vad : bool
+        Perform VAD. True or False
 
     Returns
     -------
@@ -319,11 +319,6 @@ def prepare_csv(samplerate, seg_dur, wav_lst, csv_file, amp_th=0):
             start_sample = int(int(s) / 100 * samplerate)
             end_sample = int(int(e) / 100 * samplerate)
 
-            #  Avoid chunks with very small energy
-            mean_sig = np.mean(np.abs(signal[start_sample:end_sample]))
-            if mean_sig < amp_th:
-                continue
-
             start_stop = (
                 "start:" + str(start_sample) + " stop:" + str(end_sample)
             )
@@ -331,7 +326,7 @@ def prepare_csv(samplerate, seg_dur, wav_lst, csv_file, amp_th=0):
             # Composition of the csv_line
             csv_line = [
                 chunk,
-                str(audio_duration),
+                str(seg_dur / 100),
                 wav_file,
                 "wav",
                 start_stop,
