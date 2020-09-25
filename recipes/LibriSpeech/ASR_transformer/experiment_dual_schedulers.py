@@ -77,7 +77,10 @@ test_search = S2STransformerBeamSearch(
     beam_size=params.test_beam_size,
     length_normalization=params.length_normalization,
     length_rewarding=params.length_rewarding,
+    # ctc_weight=0.5,
+    using_max_attn_shift=False,
 )
+
 
 # Define training procedure
 class ASR(sb.core.Brain):
@@ -194,19 +197,21 @@ class ASR(sb.core.Brain):
                 print("+" * len(target[i]))
                 print(target[i])
 
-                with open("ctc_samples.txt", "a") as f:
+                with open("ctc_samples_baseline.txt", "a") as f:
+                    sample = " ".join(sample)
+                    t = " ".join(target[i])
                     f.write("=" * 100 + "\n")
                     f.write("ctc sample" + "\n")
                     f.write("+" * len(sample) + "\n")
                     f.write(sample + "\n")
                     f.write("+" * len(sample) + "\n")
                     f.write("greedy search" + "\n")
-                    f.write("+" * len(target[i]) + "\n")
+                    f.write("+" * len(t) + "\n")
                     f.write(" ".join(decoded_sample[i]) + "\n")
-                    f.write("+" * len(target[i]) + "\n")
+                    f.write("+" * len(t) + "\n")
                     f.write("target" + "\n")
-                    f.write("+" * len(target[i]) + "\n")
-                    f.write(target[i] + "\n")
+                    f.write("+" * len(t) + "\n")
+                    f.write(t + "\n")
             return p_ctc, p_seq, wav_lens, hyps, target_chars, seq_lengths
 
         return p_ctc, p_seq, wav_lens, target_chars, seq_lengths
