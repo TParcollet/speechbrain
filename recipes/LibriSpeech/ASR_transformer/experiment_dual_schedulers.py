@@ -20,7 +20,6 @@ from speechbrain.lobes.models.transformer.Transformer import (
     get_key_padding_mask,
     get_lookahead_mask,
 )
-from speechbrain.decoders.ctc import ctc_greedy_decode
 
 # This hack needed to import data preparation script from ..
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -80,8 +79,7 @@ test_search = S2STransformerBeamSearch(
     beam_size=params.test_beam_size,
     length_normalization=params.length_normalization,
     length_rewarding=params.length_rewarding,
-    ctc_weight=.7,
-    using_max_attn_shift=False
+    ctc_weight=.5,
 )
 
 
@@ -182,37 +180,6 @@ class ASR(sb.core.Brain):
         elif stage == "test":
             torch.cuda.empty_cache()
             hyps, _ = test_search(enc_out.detach(), wav_lens)
-            # hyps = ctc_greedy_decode(p_ctc, wav_lens, blank_id=params.blank_index)
-            # ctc_samples = torch.argmax(p_ctc, -1)
-            # ctc_samples = params.tokenizer(ctc_samples, wav_lens, task="decode")
-            # decoded_sample = params.tokenizer(hyps, task="decode_from_list")
-            # target = params.tokenizer(target_chars, seq_lengths, task="decode")
-
-            # for i, sample in enumerate(ctc_samples):
-            #     print("=" * 100)
-            #     print("ctc sample")
-            #     print("+" * len(sample))
-            #     print(sample)
-            #     print("+" * len(sample))
-            #     print("target")
-            #     print("+" * len(target[i]))
-            #     print(target[i])
-
-            #     with open("ctc_samples_baseline.txt", "a") as f:
-            #         sample = " ".join(sample)
-            #         t = " ".join(target[i])
-            #         f.write("=" * 100 + "\n")
-            #         f.write("ctc sample" + "\n")
-            #         f.write("+" * len(sample) + "\n")
-            #         f.write(sample + "\n")
-            #         f.write("+" * len(sample) + "\n")
-            #         f.write("greedy search" + "\n")
-            #         f.write("+" * len(t) + "\n")
-            #         f.write(" ".join(decoded_sample[i]) + "\n")
-            #         f.write("+" * len(t) + "\n")
-            #         f.write("target" + "\n")
-            #         f.write("+" * len(t) + "\n")
-            #         f.write(t + "\n")
             return p_ctc, p_seq, wav_lens, hyps, target_chars, seq_lengths
 
         return p_ctc, p_seq, wav_lens, target_chars, seq_lengths
@@ -260,17 +227,14 @@ class ASR(sb.core.Brain):
                 elif stage == "test":
                     ind2lab = params.test_loader.label_dict["wrd"]["index2lab"]
                 char_seq = params.tokenizer(hyps, task="decode_from_list")
-
+                
                 target_chars = undo_padding(target_chars, target_lens)
                 target_chars = convert_index_to_lab(target_chars, ind2lab)
-
-                for i, seq in enumerate(char_seq):
-                    print("pred: {}".format(seq))
-                    print("target: {}".format(target_chars[i]))
 
                 wer_stats = edit_distance.wer_details_for_batch(
                     ids, target_chars, char_seq, compute_alignments=True
                 )
+
                 stats["WER"] = wer_stats
             stats["ACC"] = Accuracy(p_seq, chars_with_eos, rel_length)
         return loss, stats
@@ -433,6 +397,7 @@ if params.multigpu:
 # Load latest checkpoint to resume training
 checkpointer.recover_if_possible()
 params.epoch_counter.limit = params.number_of_epochs
+print(params.Transformer)
 asr_brain.fit(params.epoch_counter, train_set, valid_set)
 
 # process ckpt and do test stage

@@ -141,10 +141,6 @@ class TransformerASR(TransformerInterface):
             init_params=init_params,
         )
 
-        if init_params:
-            for name, param in self.named_parameters():
-                print(name, param.shape)
-
         return encoder_out, decoder_out
 
     def decode(self, tgt, encoder_out):

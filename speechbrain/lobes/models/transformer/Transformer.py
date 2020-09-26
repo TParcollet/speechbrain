@@ -467,9 +467,9 @@ class TransformerDecoderLayer(nn.Module):
         self.norm1 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
         self.norm2 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
         self.norm3 = GroupLayerNorm(d_ffn, num_modules, eps=1e-6)
-        self.dropout1 = torch.nn.Dropout(dropout)
-        self.dropout2 = torch.nn.Dropout(dropout)
-        self.dropout3 = torch.nn.Dropout(dropout)
+        self.dropout1 = torch.nn.Dropout(0.5)
+        self.dropout2 = torch.nn.Dropout(0.5)
+        self.dropout3 = torch.nn.Dropout(0.5)
 
         self.normalize_before = normalize_before
 
