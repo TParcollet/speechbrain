@@ -59,6 +59,7 @@ class Fbank(torch.nn.Module):
     -------
     >>> import torch
     >>> inputs = torch.randn([10, 16000])
+    >>> inp_length = torch.randn([10])
     >>> feature_maker = Fbank()
     >>> feats = feature_maker(inputs, init_params=True)
     >>> feats.shape
