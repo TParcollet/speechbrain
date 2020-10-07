@@ -100,7 +100,7 @@ class Fbank(torch.nn.Module):
             left_frames=left_frames, right_frames=right_frames,
         )
 
-    def forward(self, wav, init_params=False):
+    def forward(self, wav, wav_lens, init_params=False):
         """Returns a set of features generated from the input waveforms.
 
         Arguments
@@ -111,6 +111,17 @@ class Fbank(torch.nn.Module):
         STFT = self.compute_STFT(wav)
         mag = spectral_magnitude(STFT)
         fbanks = self.compute_fbanks(mag, init_params)
+
+        # Avoiding padded time steps
+        actual_size = torch.round(wav.shape[1] * wav_lens).int()
+        stft_size = (
+            actual_size + (self.compute_STFT.hop_length - 1)
+        ) // self.compute_STFT.hop_length
+        mask = torch.lt(
+            torch.unsqueeze(torch.arange(STFT.size(1), device=wav.device), 0),
+            torch.unsqueeze(stft_size, 1),
+        ).float()
+        fbanks = fbanks * mask.unsqueeze(-1)
 
         if self.deltas:
             delta1 = self.compute_deltas(fbanks, init_params)

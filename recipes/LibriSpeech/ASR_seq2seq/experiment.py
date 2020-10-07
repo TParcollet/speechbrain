@@ -17,6 +17,7 @@ from speechbrain.decoders.seq2seq import S2SRNNBeamSearcher
 from speechbrain.decoders.decoders import undo_padding
 from speechbrain.utils.checkpoints import ckpt_recency
 from speechbrain.utils.train_logger import summarize_error_rate
+import numpy as np
 
 
 # This hack needed to import data preparation script from ..
@@ -153,9 +154,31 @@ class ASR(sb.core.Brain):
 
         if hasattr(params, "augmentation"):
             wavs = params.augmentation(wavs, wav_lens, init_params)
-        feats = params.compute_features(wavs, init_params)
+        feats = params.compute_features(wavs, wav_lens, init_params)
         feats = params.normalize(feats, wav_lens)
+        # save from bs = 6
+        # np.save('test_norm', feats.cpu().detach().numpy())
+        # print("save to npy")
+        # load to bs = 2
+        # feats_ = np.load('test_norm.npy')
+        # print(feats_.shape, feats.shape)
+        # feats[:, :feats.size(1), :] = torch.Tensor(feats_[:feats.size(0), :feats.size(1), :]).to(feats.device)
         x = params.enc(feats, init_params=init_params)
+
+        # save from bs = 6
+        # np.save('test_array', x.cpu().detach().numpy())
+        # print("save to npy")
+
+        # load to bs = 2
+        x_ = np.load("test_array.npy")
+        x[:, : x.size(1), :] = torch.Tensor(x_[: x.size(0), : x.size(1), :]).to(
+            x.device
+        )
+
+        # compare
+        # print("bs=6", torch.Tensor(x_[0]).to(x.device))
+        # print("bs=2", x[0])
+        # print(x[0])
 
         # Prepend bos token at the beginning
         y_in = prepend_bos_token(bpe, bos_index=params.bos_index)
@@ -181,6 +204,8 @@ class ASR(sb.core.Brain):
             return p_seq, wav_lens, hyps
         elif stage == "test":
             hyps, scores = beam_searcher(x, wav_lens)
+            word_seq = params.bpe_tokenizer(hyps, task="decode_from_list")
+            print(" ".join(word_seq[0]))
             return p_seq, wav_lens, hyps
 
     def compute_objectives(self, predictions, targets, stage="train"):
