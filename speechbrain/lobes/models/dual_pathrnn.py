@@ -568,6 +568,7 @@ class SBTransformerBlock(nn.Module):
         use_group_comm=False,
         use_positional_encoding=False,
         norm_before=False,
+        share_weights=False
     ):
         super(SBTransformerBlock, self).__init__()
         self.use_positional_encoding = use_positional_encoding
@@ -578,6 +579,10 @@ class SBTransformerBlock(nn.Module):
             activation = nn.GELU
         else:
             raise ValueError("unknown activation")
+
+        if share_weights:
+            self.num_layers = num_layers
+            num_layers = 1
 
         self.mdl = TransformerEncoder(
             num_layers,
@@ -596,12 +601,20 @@ class SBTransformerBlock(nn.Module):
         if use_positional_encoding:
             self.pos_enc = PositionalEncoding()
 
+        self.share_weights = share_weights
+
     def forward(self, x, init_params=False):
         if self.use_positional_encoding:
             pos_enc = self.pos_enc(x, init_params=init_params)
-            return self.mdl(x + pos_enc, init_params=init_params)
+            x = x + pos_enc
+        if self.share_weights:
+            for _ in range(self.num_layers):
+                x = self.mdl(x, init_params=init_params)
+                init_params = False
         else:
-            return self.mdl(x, init_params=init_params)
+            x = self.mdl(x, init_params=init_params)
+
+        return x
 
 
 class SBRNNBlock(nn.Module):
