@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import copy
 
 from performer_pytorch import Performer
+from torch.utils.checkpoint import checkpoint
 
 from speechbrain.nnet.linear import Linear
 from speechbrain.lobes.models.transformer.Transformer import TransformerEncoder
@@ -1000,7 +1001,7 @@ class Dual_Path_Model(nn.Module):
         x, gap = self._Segmentation(x, self.K)
         # [B, N*spks, K, S]
         for i in range(self.num_layers):
-            x = self.dual_mdl[i](x, init_params=init_params)
+            x = checkpoint(self.dual_mdl[i], x)  # init_params
 
         # self.dual_mdl[1].inter_mdl.mdl.layers[0].linear1.weight to see the weights
 
