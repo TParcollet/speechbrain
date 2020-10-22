@@ -131,7 +131,7 @@ class Encoder(nn.Module):
     def forward(self, x, init_params=True):
         """
           Input:
-              x: [B, T], B is batch size, T is times
+              x: [B, T], B is batch size, T is times2, 32, 3
           Returns:
               x: [B, C, T_out]
               T_out is the number of time steps
@@ -651,7 +651,7 @@ class Dual_Computation_Block(nn.Module):
         self.intra_linear = Linear(out_channels)
         self.inter_linear = Linear(out_channels)
 
-    def forward(self, x, init_params=True):
+    def forward(self, x, init_params=True, reparam=False):
         """
            x: [B, N, K, S]
            out: [Spks, B, N, K, S]
@@ -661,7 +661,8 @@ class Dual_Computation_Block(nn.Module):
         # [BS, K, N]
         intra = x.permute(0, 3, 2, 1).contiguous().view(B * S, K, N)
         # [BS, K, H]
-
+        if reparam:
+            F.gumbel_softmax(intra, 0.9, hard=False, dim=1)
         intra = self.intra_mdl(intra, init_params=init_params)
 
         # [BS, K, N]
@@ -682,6 +683,8 @@ class Dual_Computation_Block(nn.Module):
         # [BK, S, N]
         inter = intra.permute(0, 2, 3, 1).contiguous().view(B * K, S, N)
         # [BK, S, H]
+        if reparam:
+            F.gumbel_softmax(intra, 0.9, hard=False, dim=1)
         inter = self.inter_mdl(inter, init_params=init_params)
 
         # [BK, S, N]
@@ -742,7 +745,7 @@ class Dual_Path_Model(nn.Module):
             nn.Conv1d(out_channels, out_channels, 1), nn.Sigmoid()
         )
 
-    def forward(self, x, init_params=True):
+    def forward(self, x, init_params=True, reparam=False):
         """
            x: [B, N, L]
         """
@@ -755,7 +758,7 @@ class Dual_Path_Model(nn.Module):
         x, gap = self._Segmentation(x, self.K)
         # [B, N*spks, K, S]
         for i in range(self.num_layers):
-            x = self.dual_mdl[i](x, init_params=init_params)
+            x = self.dual_mdl[i](x, init_params=init_params, reparam=reparam)
 
         # self.dual_mdl[1].inter_mdl.mdl.layers[0].linear1.weight to see the weights
 

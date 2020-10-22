@@ -227,7 +227,7 @@ class SourceSeparationBrain(SourceSeparationBrainSuperclass):
 
         mixture_w = self.params.Encoder(mixture, init_params=init_params)
         # [batch, channel, time / kernel stride]
-        est_mask = self.params.MaskNet(mixture_w, init_params=init_params)
+        est_mask = self.params.MaskNet(mixture_w, init_params=init_params, reparam=self.params.reparam)
 
         out = [est_mask[i] * mixture_w for i in range(2)]
         est_source = torch.cat(
@@ -313,22 +313,22 @@ def main():
 
         # load or create the csv files which enables us to get the speechbrain dataloaders
         if not (
-            os.path.exists(params.save_folder + "/wsj_tr.csv")
-            and os.path.exists(params.save_folder + "/wsj_cv.csv")
-            and os.path.exists(params.save_folder + "/wsj_tt.csv")
+            os.path.exists(data_save_dir + "/wsj_tr.csv")
+            and os.path.exists(data_save_dir + "/wsj_cv.csv")
+            and os.path.exists(data_save_dir + "/wsj_tt.csv")
         ):
             from recipes.WSJ2Mix.prepare_data import create_wsj_csv
 
-            create_wsj_csv(data_save_dir, params.save_folder)
+            create_wsj_csv(data_save_dir, data_save_dir)
 
         tr_csv = os.path.realpath(
-            os.path.join(params.save_folder + "/wsj_tr.csv")
+            os.path.join(data_save_dir + "/wsj_tr.csv")
         )
         cv_csv = os.path.realpath(
-            os.path.join(params.save_folder + "/wsj_cv.csv")
+            os.path.join(data_save_dir + "/wsj_cv.csv")
         )
         tt_csv = os.path.realpath(
-            os.path.join(params.save_folder + "/wsj_tt.csv")
+            os.path.join(data_save_dir + "/wsj_tt.csv")
         )
 
         with open(args.config) as fin:
