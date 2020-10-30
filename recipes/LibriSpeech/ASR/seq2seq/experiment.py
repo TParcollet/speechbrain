@@ -49,6 +49,7 @@ class ASR(sb.Brain):
 
         # Add augmentation if specified
         if stage == sb.Stage.TRAIN:
+            """
             if hasattr(self.modules, "env_corrupt"):
                 wavs_noise = self.modules.env_corrupt(wavs, wav_lens)
                 wavs = torch.cat([wavs, wavs_noise], dim=0)
@@ -57,6 +58,7 @@ class ASR(sb.Brain):
                 target_word_lens = torch.cat(
                     [target_word_lens, target_word_lens]
                 )
+            """
             if hasattr(self.hparams, "augmentation"):
                 wavs = self.hparams.augmentation(wavs, wav_lens)
 
@@ -112,11 +114,11 @@ class ASR(sb.Brain):
         )
         target_tokens = target_tokens.to(self.device)
         target_token_lens = target_token_lens.to(self.device)
-        if hasattr(self.modules, "env_corrupt") and stage == sb.Stage.TRAIN:
-            target_tokens = torch.cat([target_tokens, target_tokens], dim=0)
-            target_token_lens = torch.cat(
-                [target_token_lens, target_token_lens], dim=0
-            )
+        # if hasattr(self.modules, "env_corrupt") and stage == sb.Stage.TRAIN:
+        #    target_tokens = torch.cat([target_tokens, target_tokens], dim=0)
+        #    target_token_lens = torch.cat(
+        #        [target_token_lens, target_token_lens], dim=0
+        #    )
 
         # Add char_lens by one for eos token
         abs_length = torch.round(target_token_lens * target_tokens.shape[1])
