@@ -167,8 +167,16 @@ class CRDNN(Sequential):
                 re_init=rnn_re_init,
             )
 
-        for block_index in range(dnn_blocks):
-            self.append(Linear, n_neurons=dnn_neurons, bias=True)
+        for block_index in range(rnn_layers):
+            self.append(
+                rnn_class,
+                hidden_size=rnn_neurons,
+                num_layers=1,
+                dropout=dropout,
+                bidirectional=rnn_bidirectional,
+                re_init=rnn_re_init,
+            )
+            self.append(
+                Linear, n_neurons=dnn_neurons, bias=True, combine_dims=True,
+            )
             self.append(BatchNorm1d)
-            self.append(activation())
-            self.append(torch.nn.Dropout(p=dropout))
