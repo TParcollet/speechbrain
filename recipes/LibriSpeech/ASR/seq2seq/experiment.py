@@ -35,7 +35,6 @@ import sys
 import torch
 import speechbrain as sb
 from speechbrain.utils.data_utils import download_file
-from speechbrain.tokenizers.SentencePiece import SentencePiece
 from speechbrain.utils.data_utils import undo_padding
 
 
@@ -219,6 +218,7 @@ class ASR(sb.Brain):
             with open(self.hparams.wer_file, "w") as w:
                 self.wer_metric.write_stats(w)
 
+    '''
     def load_tokenizer(self):
         """Loads the sentence piece tokinizer specified in the yaml file"""
         save_model_path = self.hparams.save_folder + "/tok_unigram.model"
@@ -238,6 +238,7 @@ class ASR(sb.Brain):
                 dest=save_vocab_path,
                 replace_existing=True,
             )
+    '''
 
     def load_lm(self):
         """Loads the LM specified in the yaml file"""
@@ -283,6 +284,7 @@ if __name__ == "__main__":
 
     # Creating tokenizer must be done after preparation
     # Specify the bos_id/eos_id if different from blank_id
+    """
     hparams["tokenizer"] = SentencePiece(
         model_dir=hparams["save_folder"],
         vocab_size=hparams["output_neurons"],
@@ -291,6 +293,7 @@ if __name__ == "__main__":
         model_type=hparams["token_type"],
         character_coverage=1.0,
     )
+    """
 
     train_set = hparams["train_loader"]()
     valid_set = hparams["valid_loader"]()
@@ -308,7 +311,7 @@ if __name__ == "__main__":
         checkpointer=hparams["checkpointer"],
     )
 
-    asr_brain.load_tokenizer()
+    # asr_brain.load_tokenizer()
     if hasattr(asr_brain.hparams, "lm_ckpt_file"):
         asr_brain.load_lm()
 
