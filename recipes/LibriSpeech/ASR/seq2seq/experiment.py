@@ -34,7 +34,8 @@ import os
 import sys
 import torch
 import speechbrain as sb
-from speechbrain.utils.data_utils import download_file
+
+# from speechbrain.utils.data_utils import download_file
 from speechbrain.utils.data_utils import undo_padding
 
 
@@ -240,6 +241,7 @@ class ASR(sb.Brain):
             )
     '''
 
+    '''
     def load_lm(self):
         """Loads the LM specified in the yaml file"""
         save_model_path = os.path.join(
@@ -252,6 +254,7 @@ class ASR(sb.Brain):
         state_dict = {k.split(".", 1)[1]: v for k, v in state_dict.items()}
         self.hparams.lm_model.load_state_dict(state_dict, strict=True)
         self.hparams.lm_model.eval()
+    '''
 
 
 if __name__ == "__main__":
