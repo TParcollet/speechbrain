@@ -295,9 +295,10 @@ if __name__ == "__main__":
         csv_read="wrd",
         model_type=hparams["token_type"],
         character_coverage=1.0,
-        eos_index=hparams["eos_index"],
-        bos_index=hparams["bos_index"],
-        blank_index=hparams["blank_index"],
+        eos_id=hparams["eos_index"],
+        bos_id=hparams["bos_index"],
+        unk_id=hparams["unk_index"],
+        pad_id=hparams["pad_index"],
     )
 
     train_set = hparams["train_loader"]()
