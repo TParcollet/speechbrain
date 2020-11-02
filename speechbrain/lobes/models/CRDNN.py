@@ -168,8 +168,8 @@ class CRDNN(Sequential):
             self.append(
                 Linear, n_neurons=dnn_neurons, bias=True, combine_dims=True,
             )
-            self.append(BatchNorm1d)
 
-            if block_index == rnn_layers - 1:
+            if block_index < rnn_layers - 1:
                 self.append(activation())
                 self.append(torch.nn.Dropout(p=dropout))
+                self.append(BatchNorm1d)
