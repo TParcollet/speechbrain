@@ -16,7 +16,7 @@ from speechbrain.nnet import (
     Pooling2d,
     Dropout2d,
     Sequential,
-    BatchNorm1d,
+    # BatchNorm1d,
     LayerNorm,
 )
 
@@ -168,8 +168,7 @@ class CRDNN(Sequential):
             self.append(
                 Linear, n_neurons=dnn_neurons, bias=True, combine_dims=True,
             )
+            self.append(torch.nn.Dropout(p=dropout))
 
             if block_index < rnn_layers - 1:
                 self.append(activation())
-                self.append(torch.nn.Dropout(p=dropout))
-                self.append(BatchNorm1d)
