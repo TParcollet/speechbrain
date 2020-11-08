@@ -49,8 +49,8 @@ class ASR(sb.Brain):
         wavs, wav_lens = wavs.to(self.device), wav_lens.to(self.device)
 
         # Add augmentation if specified
+        """
         if stage == sb.Stage.TRAIN:
-            """
             if hasattr(self.modules, "env_corrupt"):
                 wavs_noise = self.modules.env_corrupt(wavs, wav_lens)
                 wavs = torch.cat([wavs, wavs_noise], dim=0)
@@ -59,9 +59,9 @@ class ASR(sb.Brain):
                 target_word_lens = torch.cat(
                     [target_word_lens, target_word_lens]
                 )
-            """
             if hasattr(self.hparams, "augmentation"):
                 wavs = self.hparams.augmentation(wavs, wav_lens)
+        """
 
         # Prepare labels
         target_tokens, _ = self.hparams.tokenizer(
