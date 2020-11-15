@@ -9,7 +9,7 @@ import torch
 import numpy as np
 
 import speechbrain as sb
-from speechbrain.decoders.ctc import CTCPrefixScorer, CTCPrefixScoreTH
+from speechbrain.decoders.ctc import CTCPrefixScorer
 
 
 class S2SBaseSearcher(torch.nn.Module):
@@ -387,6 +387,12 @@ class S2SBeamSearcher(S2SBaseSearcher):
             return True
         else:
             return False
+        """
+        for i in range(len(hyps)):
+            if len(hyps[i]) < beam_size:
+                return False
+        return True
+        """
 
     def _check_attn_shift(self, attn, prev_attn_peak):
         """
@@ -538,22 +544,22 @@ class S2SBeamSearcher(S2SBaseSearcher):
         if self.ctc_weight > 0:
             # (batch_size * beam_size, L, vocab_size)
             ctc_outputs = self.ctc_forward_step(enc_states)
-            # ctc_scorer = CTCPrefixScorer(
-            #     ctc_outputs,
-            #     enc_lens,
-            #     batch_size,
-            #     self.beam_size,
-            #     0,
-            #     self.eos_index,
-            # )
-            ctc_scorer = CTCPrefixScoreTH(
+            ctc_scorer = CTCPrefixScorer(
                 ctc_outputs,
                 enc_lens,
-                # batch_size,
-                # self.beam_size,
+                batch_size,
+                self.beam_size,
                 0,
                 self.eos_index,
             )
+            # ctc_scorer = CTCPrefixScoreTH(
+            #    ctc_outputs,
+            #    enc_lens,
+            #    # batch_size,
+            #    # self.beam_size,
+            #    0,
+            #    self.eos_index,
+            # )
             ctc_memory = None
 
         # Inflate the enc_states and enc_len by beam_size times
@@ -634,8 +640,8 @@ class S2SBeamSearcher(S2SBaseSearcher):
 
             # adding CTC scores to log_prob if ctc_weight > 0
             if self.ctc_weight > 0:
-                # g = alived_seq
-                g = memory
+                g = alived_seq
+                # g = memory
                 # block blank token
                 log_probs[:, self.bos_index] = self.minus_inf
                 if self.ctc_weight != 1.0:
@@ -794,6 +800,11 @@ class S2SBeamSearcher(S2SBaseSearcher):
         else:
             return predictions, top_scores
 
+    def ctc_forward_step(self, x):
+        logits = self.ctc_fc(x)
+        log_probs = self.softmax(logits)
+        return log_probs
+
     def permute_mem(self, memory, index):
         """
         This method permutes the seq2seq model memory
@@ -875,11 +886,14 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
     >>> hyps, scores = searcher(enc, wav_len)
     """
 
-    def __init__(self, embedding, decoder, linear, temperature=1.0, **kwargs):
+    def __init__(
+        self, embedding, decoder, linear, ctc_linear, temperature=1.0, **kwargs
+    ):
         super(S2SRNNBeamSearcher, self).__init__(**kwargs)
         self.emb = embedding
         self.dec = decoder
         self.fc = linear
+        self.ctc_fc = ctc_linear
         self.softmax = torch.nn.LogSoftmax(dim=-1)
         self.temperature = temperature
 
@@ -981,27 +995,46 @@ class S2SRNNBeamSearchLM(S2SRNNBeamSearcher):
         self.log_softmax = sb.nnet.Softmax(apply_log=True)
         self.temperature_lm = temperature_lm
 
+    """
     def lm_forward_step(self, inp_tokens, memory):
         with torch.no_grad():
             logits, hs = self.lm(inp_tokens, hx=memory)
             log_probs = self.log_softmax(logits / self.temperature_lm)
 
         return log_probs, hs
+    """
+
+    def lm_forward_step(self, inp_tokens, memory):
+        memory = _update_mem(inp_tokens, memory)
+
+        if not next(self.lm.parameters()).is_cuda:
+            self.lm.to(inp_tokens.device)
+            self.lm = torch.nn.parallel.DistributedDataParallel(
+                self.lm, device_ids=[inp_tokens.device]
+            )
+
+        logits = self.lm(memory)
+        log_probs = self.softmax(logits)
+        return log_probs[:, -1, :], memory
 
     def permute_lm_mem(self, memory, index):
-        """This is to permute lm memory to synchronize with current index
-        during beam search. The order of beams will be shuffled by scores
-        every timestep to allow batched beam search.
-        Further details please refer to speechbrain/decoder/seq2seq.py.
-        """
-
-        if isinstance(memory, tuple):
-            memory_0 = torch.index_select(memory[0], dim=1, index=index)
-            memory_1 = torch.index_select(memory[1], dim=1, index=index)
-            memory = (memory_0, memory_1)
-        else:
-            memory = torch.index_select(memory, dim=1, index=index)
+        memory = torch.index_select(memory, dim=0, index=index)
         return memory
+
+    # def permute_lm_mem(self, memory, index):
+    #    """This is to permute lm memory to synchronize with current index
+    #    during beam search. The order of beams will be shuffled by scores
+    #    every timestep to allow batched beam search.
+    #    Further details please refer to speechbrain/decoder/seq2seq.py.
+    #    """
+    #
+    #    if isinstance(memory, tuple):
+    #        memory_0 = torch.index_select(memory[0], dim=1, index=index)
+    #        memory_1 = torch.index_select(memory[1], dim=1, index=index)
+    #        memory = (memory_0, memory_1)
+    #    else:
+    #        memory = torch.index_select(memory, dim=1, index=index)
+    #    return memory
 
     def reset_lm_mem(self, batch_size, device):
         # set hidden_state=None, pytorch RNN will automatically set it to
