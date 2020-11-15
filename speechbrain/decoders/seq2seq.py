@@ -7,7 +7,9 @@ Authors
 """
 import torch
 import numpy as np
+
 import speechbrain as sb
+from speechbrain.decoders.ctc import CTCPrefixScorer, CTCPrefixScoreTH
 
 
 class S2SBaseSearcher(torch.nn.Module):
@@ -324,6 +326,8 @@ class S2SBeamSearcher(S2SBaseSearcher):
         length_rewarding=0,
         coverage_penalty=0.0,
         lm_weight=0.0,
+        lm_modules=None,
+        ctc_weight=0.0,
         using_max_attn_shift=False,
         max_attn_shift=60,
         minus_inf=-1e20,
@@ -349,6 +353,15 @@ class S2SBeamSearcher(S2SBaseSearcher):
         self.using_max_attn_shift = using_max_attn_shift
         self.max_attn_shift = max_attn_shift
         self.lm_weight = lm_weight
+        self.lm_modules = lm_modules
+        self.ctc_weight = ctc_weight
+        self.att_weight = 1.0 - ctc_weight
+
+        assert (
+            0.0 <= self.ctc_weight <= 1.0
+        ), "ctc_weight should not > 1.0 and < 0.0"
+
+        # ctc already initalized
         self.minus_inf = minus_inf
 
     def _check_full_beams(self, hyps, beam_size):
@@ -512,19 +525,40 @@ class S2SBeamSearcher(S2SBaseSearcher):
             top_log_probs += [log_probs[index] for index in indices]
         return predictions, top_scores, top_log_probs
 
-    def forward(self, enc_states, wav_len):
+    def forward(self, enc_states, wav_len):  # noqa: C901
         enc_lens = torch.round(enc_states.shape[1] * wav_len).int()
         device = enc_states.device
         batch_size = enc_states.shape[0]
-
-        # Inflate the enc_states and enc_len by beam_size times
-        enc_states = inflate_tensor(enc_states, times=self.beam_size, dim=0)
-        enc_lens = inflate_tensor(enc_lens, times=self.beam_size, dim=0)
 
         memory = self.reset_mem(batch_size * self.beam_size, device=device)
 
         if self.lm_weight > 0:
             lm_memory = self.reset_lm_mem(batch_size * self.beam_size, device)
+
+        if self.ctc_weight > 0:
+            # (batch_size * beam_size, L, vocab_size)
+            ctc_outputs = self.ctc_forward_step(enc_states)
+            # ctc_scorer = CTCPrefixScorer(
+            #     ctc_outputs,
+            #     enc_lens,
+            #     batch_size,
+            #     self.beam_size,
+            #     0,
+            #     self.eos_index,
+            # )
+            ctc_scorer = CTCPrefixScoreTH(
+                ctc_outputs,
+                enc_lens,
+                # batch_size,
+                # self.beam_size,
+                0,
+                self.eos_index,
+            )
+            ctc_memory = None
+
+        # Inflate the enc_states and enc_len by beam_size times
+        enc_states = inflate_tensor(enc_states, times=self.beam_size, dim=0)
+        enc_lens = inflate_tensor(enc_lens, times=self.beam_size, dim=0)
 
         # Using bos as the first input
         inp_tokens = (
@@ -537,8 +571,8 @@ class S2SBeamSearcher(S2SBaseSearcher):
         beam_offset = torch.arange(batch_size, device=device) * self.beam_size
 
         # initialize sequence scores variables.
-        sequence_scores = torch.Tensor(batch_size * self.beam_size).to(device)
-        sequence_scores.fill_(-np.inf)
+        sequence_scores = torch.empty(batch_size * self.beam_size).to(device)
+        sequence_scores.fill_(self.minus_inf)
 
         # keep only the first to make sure no redundancy.
         sequence_scores.index_fill_(0, beam_offset, 0.0)
@@ -571,6 +605,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
             log_probs, memory, attn = self.forward_step(
                 inp_tokens, memory, enc_states, enc_lens
             )
+            log_probs = self.att_weight * log_probs
 
             # Keep the original value
             log_probs_clone = log_probs.clone().reshape(batch_size, -1)
@@ -596,6 +631,25 @@ class S2SBeamSearcher(S2SBaseSearcher):
                     cond,
                     fill_value=self.minus_inf,
                 )
+
+            # adding CTC scores to log_prob if ctc_weight > 0
+            if self.ctc_weight > 0:
+                # g = alived_seq
+                g = memory
+                # block blank token
+                log_probs[:, self.bos_index] = self.minus_inf
+                if self.ctc_weight != 1.0:
+                    # pruning vocab for ctc_scorer
+                    # _, ctc_candidates = log_probs.topk(
+                    #     self.beam_size * 2, dim=-1
+                    # )
+                    ctc_candidates = None
+                else:
+                    ctc_candidates = None
+                ctc_log_probs, ctc_memory = ctc_scorer.forward_step(
+                    g, ctc_memory, ctc_candidates
+                )
+                log_probs = log_probs + self.ctc_weight * ctc_log_probs
 
             # adding LM scores to log_prob if lm_weight > 0
             if self.lm_weight > 0:
@@ -638,6 +692,9 @@ class S2SBeamSearcher(S2SBaseSearcher):
             memory = self.permute_mem(memory, index=predecessors)
             if self.lm_weight > 0:
                 lm_memory = self.permute_lm_mem(lm_memory, index=predecessors)
+
+            if self.ctc_weight > 0:
+                ctc_memory = ctc_scorer.permute_mem(ctc_memory, candidates)
 
             # If using_max_attn_shift, then the previous attn peak has to be permuted too.
             if self.using_max_attn_shift:
@@ -783,7 +840,6 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
     This class implements the beam search decoding
     for AttentionalRNNDecoder (speechbrain/nnet/RNN.py).
     See also S2SBaseSearcher(), S2SBeamSearcher().
-
     Parameters
     ----------
     embedding : torch.nn.Module
@@ -797,7 +853,6 @@ class S2SRNNBeamSearcher(S2SBeamSearcher):
         distribution, being more soft when T>1 and more sharp with T<1.
     **kwargs
         see S2SBeamSearcher, arguments are directly passed
-
     Example
     -------
     >>> emb = torch.nn.Embedding(5, 3)
@@ -868,7 +923,6 @@ class S2SRNNBeamSearchLM(S2SRNNBeamSearcher):
     This class implements the beam search decoding
     for AttentionalRNNDecoder (speechbrain/nnet/RNN.py) with LM.
     See also S2SBaseSearcher(), S2SBeamSearcher(), S2SRNNBeamSearcher().
-
     Parameters
     ----------
     embedding : torch.nn.Module
@@ -884,7 +938,6 @@ class S2SRNNBeamSearchLM(S2SRNNBeamSearcher):
         distribution, being more soft when T>1 and more sharp with T<1.
     **kwargs
         Arguments to pass to S2SBeamSearcher
-
     Example
     -------
     >>> emb = torch.nn.Embedding(5, 3)
@@ -1057,7 +1110,7 @@ def _model_decode(model, softmax, fc, inp_tokens, memory, enc_states):
     memory = _update_mem(inp_tokens, memory)
     pred = model.decode(memory, enc_states)
     prob_dist = softmax(fc(pred))
-    return prob_dist, memory
+    return prob_dist, memory, pred[:, -1, :]
 
 
 class S2STransformerBeamSearch(S2SBeamSearcher):
@@ -1079,25 +1132,51 @@ class S2STransformerBeamSearch(S2SBeamSearcher):
     >>> # see recipes/LibriSpeech/ASR_transformer/experiment.py
     """
 
-    def __init__(self, model, linear, **kwargs):
+    def __init__(
+        self, modules, **kwargs,
+    ):
         super(S2STransformerBeamSearch, self).__init__(**kwargs)
 
-        self.model = model
-        self.fc = linear
+        self.model = modules[0]
+        self.fc = modules[1]
+        self.ctc_fc = modules[2]
         self.softmax = torch.nn.LogSoftmax(dim=-1)
 
     def reset_mem(self, batch_size, device):
+        return None
+
+    def reset_lm_mem(self, batch_size, device):
         return None
 
     def permute_mem(self, memory, index):
         memory = torch.index_select(memory, dim=0, index=index)
         return memory
 
+    def permute_lm_mem(self, memory, index):
+        memory = torch.index_select(memory, dim=0, index=index)
+        return memory
+
     def forward_step(self, inp_tokens, memory, enc_states, enc_lens):
-        prob_dist, memory = _model_decode(
+        prob_dist, memory, attn = _model_decode(
             self.model, self.softmax, self.fc, inp_tokens, memory, enc_states
         )
-        return prob_dist[:, -1, :], memory, None
+        return prob_dist[:, -1, :], memory, attn
+
+    def ctc_forward_step(self, x):
+        logits = self.ctc_fc(x)
+        log_probs = self.softmax(logits)
+        return log_probs
+
+    def lm_forward_step(self, inp_tokens, memory):
+        memory = _update_mem(inp_tokens, memory)
+        if not next(self.lm_modules.parameters()).is_cuda:
+            self.lm_modules.to(inp_tokens.device)
+            self.lm_modules = torch.nn.parallel.DistributedDataParallel(
+                self.lm_modules, device_ids=[inp_tokens.device]
+            )
+        logits = self.lm_modules(memory)
+        log_probs = self.softmax(logits)
+        return log_probs[:, -1, :], memory
 
 
 class S2STransformerGreedySearch(S2SGreedySearcher):

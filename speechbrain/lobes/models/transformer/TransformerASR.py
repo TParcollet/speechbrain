@@ -15,6 +15,7 @@ from speechbrain.lobes.models.transformer.Transformer import (
     get_key_padding_mask,
     NormalizedEmbedding,
 )
+from speechbrain.data_io.data_io import length_to_mask
 
 
 class TransformerASR(TransformerInterface):
@@ -99,7 +100,7 @@ class TransformerASR(TransformerInterface):
         self._init_params()
 
     def forward(
-        self, src, tgt, pad_idx=0,
+        self, src, tgt, wav_len=None, pad_idx=0,
     ):
         """
         Arguements
@@ -122,7 +123,7 @@ class TransformerASR(TransformerInterface):
             tgt_key_padding_mask,
             src_mask,
             tgt_mask,
-        ) = self.make_masks(src, tgt, pad_idx=pad_idx)
+        ) = self.make_masks(src, tgt, wav_len, pad_idx=pad_idx)
 
         src = self.custom_src_module(src)
         src = src + self.positional_encoding(src)
@@ -139,11 +140,12 @@ class TransformerASR(TransformerInterface):
             memory=encoder_out,
             tgt_mask=tgt_mask,
             tgt_key_padding_mask=tgt_key_padding_mask,
+            # memory_key_padding_mask=src_key_padding_mask,
         )
 
         return encoder_out, decoder_out
 
-    def make_masks(self, src, tgt, pad_idx=0):
+    def make_masks(self, src, tgt, wav_len=None, pad_idx=0):
         """This method generate the masks for training the transformer model
 
         Arguements
@@ -156,6 +158,9 @@ class TransformerASR(TransformerInterface):
             the index for <pad> token (default=0).
         """
         src_key_padding_mask = None
+        if wav_len is not None:
+            abs_len = torch.round(wav_len * src.shape[1])
+            src_key_padding_mask = (1 - length_to_mask(abs_len)).bool()
         tgt_key_padding_mask = get_key_padding_mask(tgt, pad_idx=pad_idx)
 
         src_mask = None
