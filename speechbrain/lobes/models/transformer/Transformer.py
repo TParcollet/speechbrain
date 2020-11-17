@@ -362,9 +362,7 @@ class TransformerEncoder(nn.Module):
                     vdim=vdim,
                     dropout=dropout,
                     activation=activation,
-                    num_modules=num_modules
-                    if (j > 1 and j < num_layers - 1)
-                    else 1,
+                    num_modules=num_modules if j > 1 else 1,
                     use_group_comm=use_group_comm,
                     norm_before=norm_before,
                 )
