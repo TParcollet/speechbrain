@@ -87,7 +87,7 @@ class ASR(sb.Brain):
         # Compute outputs
         if stage == sb.Stage.TRAIN:
             return_CTC = False
-            return_CE = False
+            return_LM = False
             current_epoch = self.hparams.epoch_counter.current
             if (
                 hasattr(self.hparams, "ctc_cost")
@@ -98,19 +98,19 @@ class ASR(sb.Brain):
                 out_ctc = self.modules.enc_lin(x)
                 p_ctc = self.hparams.log_softmax(out_ctc)
             if (
-                hasattr(self.hparams, "ce_cost")
-                and current_epoch <= self.hparams.number_of_ce_epochs
+                hasattr(self.hparams, "dec_ce_cost")
+                and current_epoch <= self.hparams.number_of_dec_ce_epochs
             ):
-                return_CE = True
+                return_LM = True
                 # Output layer for ctc log-probabilities
-                p_ce = self.modules.dec_lin(h)
-                p_ce = self.hparams.log_softmax(p_ce)
-            if return_CE and return_CTC:
-                return p_ctc, p_ce, p_transducer, wav_lens
+                p_lm = self.modules.dec_lin(h)
+                p_lm = self.hparams.log_softmax(p_lm)
+            if return_LM and return_CTC:
+                return p_ctc, p_lm, p_transducer, wav_lens
             elif return_CTC:
                 return p_ctc, p_transducer, wav_lens
-            elif return_CE:
-                return p_ce, p_transducer, wav_lens
+            elif return_LM:
+                return p_lm, p_transducer, wav_lens
             else:
                 return p_transducer, wav_lens
 
@@ -140,10 +140,9 @@ class ASR(sb.Brain):
                 [target_token_lens, target_token_lens], dim=0
             )
 
-        current_epoch = self.hparams.epoch_counter.current
         if stage == sb.Stage.TRAIN:
             if len(predictions) == 4:
-                p_ctc, p_ce, p_transducer, wav_lens = predictions
+                p_ctc, p_lm, p_transducer, wav_lens = predictions
                 CTC_loss = self.hparams.ctc_cost(
                     p_ctc, target_tokens, wav_lens, target_token_lens
                 )
@@ -157,8 +156,8 @@ class ASR(sb.Brain):
                     eos_index=self.hparams.blank_index,
                 )
                 rel_length = (abs_length + 1) / target_tokens_with_eos.shape[1]
-                CE_loss = self.hparams.ce_cost(
-                    p_ce, target_tokens_with_eos, length=rel_length
+                LM_loss = self.hparams.dec_ce_cost(
+                    p_lm, target_tokens_with_eos, length=rel_length
                 )
                 target_tokens = target_tokens.long()
                 loss_transducer = self.hparams.transducer_cost(
@@ -166,14 +165,17 @@ class ASR(sb.Brain):
                 )
                 loss = (
                     self.hparams.ctc_weight * CTC_loss
-                    + self.hparams.ce_weight * CE_loss
-                    + (1 - (self.hparams.ctc_weight + self.hparams.ce_weight))
+                    + self.hparams.dec_ce_weight * LM_loss
+                    + (
+                        1
+                        - (self.hparams.ctc_weight + self.hparams.dec_ce_weight)
+                    )
                     * loss_transducer
                 )
             elif len(predictions) == 3:
                 # one of the 2 heads (CTC or CE) is still computed
                 # CTC alive
-                if current_epoch <= self.hparams.number_of_ctc_epochs:
+                if hasattr(self.hparams, "ctc_cost"):
                     p_ctc, p_transducer, wav_lens = predictions
                     CTC_loss = self.hparams.ctc_cost(
                         p_ctc, target_tokens, wav_lens, target_token_lens
@@ -188,12 +190,12 @@ class ASR(sb.Brain):
                     )
                 # CE for decoder alive
                 else:
-                    p_ce, p_transducer, wav_lens = predictions
+                    p_lm, p_transducer, wav_lens = predictions
                     # generate output sequence for decoder + CE loss
                     abs_length = torch.round(
                         target_token_lens * target_tokens.shape[1]
                     )
-                    target_tokens_with_eos = sb.data_io.append_eos_token(
+                    target_tokens_with_eos = sb.data_io.data_io.append_eos_token(
                         target_tokens,
                         length=abs_length,
                         eos_index=self.hparams.blank_index,
@@ -201,16 +203,16 @@ class ASR(sb.Brain):
                     rel_length = (
                         abs_length + 1
                     ) / target_tokens_with_eos.shape[1]
-                    CE_loss = self.hparams.ce_cost(
-                        p_ce, target_tokens_with_eos, length=rel_length
+                    LM_loss = self.hparams.dec_ce_cost(
+                        p_lm, target_tokens_with_eos, length=rel_length
                     )
                     target_tokens = target_tokens.long()
                     loss_transducer = self.hparams.transducer_cost(
                         p_transducer, target_tokens, wav_lens, target_token_lens
                     )
                     loss = (
-                        self.hparams.ce_weight * CE_loss
-                        + (1 - self.hparams.ctc_weight) * loss_transducer
+                        self.hparams.dec_ce_weight * LM_loss
+                        + (1 - self.hparams.dec_ce_weight) * loss_transducer
                     )
             else:
                 p_transducer, wav_lens = predictions
