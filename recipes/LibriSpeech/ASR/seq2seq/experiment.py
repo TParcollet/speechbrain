@@ -38,6 +38,10 @@ from speechbrain.tokenizers.SentencePiece import SentencePiece
 
 # from speechbrain.utils.data_utils import download_file
 from speechbrain.utils.data_utils import undo_padding
+import logging
+
+logger = logging.getLogger(__name__)
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
 # Define training procedure
@@ -240,9 +244,7 @@ class ASR(sb.Brain):
                 dest=save_vocab_path,
                 replace_existing=True,
             )
-    '''
 
-    '''
     def load_lm(self):
         """Loads the LM specified in the yaml file"""
         save_model_path = os.path.join(
@@ -256,6 +258,21 @@ class ASR(sb.Brain):
         self.hparams.lm_model.load_state_dict(state_dict, strict=True)
         self.hparams.lm_model.eval()
     '''
+
+    def load_lm(self):
+        """Loads the LM specified in the yaml file"""
+        # save_model_path = os.path.join(
+        #    self.hparams.output_folder, "save", "lm_model.ckpt"
+        # )
+        # download_file(self.hparams.lm_ckpt_file, save_model_path)
+
+        save_model_path = self.hparams.lm_ckpt_file
+        # Load downloaded model, removing prefix
+        state_dict = torch.load(save_model_path)
+        state_dict = {k.split(".", 1)[1]: v for k, v in state_dict.items()}
+        self.hparams.lm_model.load_state_dict(state_dict, strict=False)
+        self.hparams.lm_model.eval()
+        logger.info("loaded LM from {}".format(save_model_path))
 
 
 if __name__ == "__main__":
@@ -322,7 +339,7 @@ if __name__ == "__main__":
         asr_brain.load_lm()
 
     # Training
-    asr_brain.fit(asr_brain.hparams.epoch_counter, train_set, valid_set)
+    # asr_brain.fit(asr_brain.hparams.epoch_counter, train_set, valid_set)
 
     # Test
     asr_brain.hparams.wer_file = (
@@ -332,4 +349,4 @@ if __name__ == "__main__":
     asr_brain.hparams.wer_file = (
         hparams["output_folder"] + "/wer_test_other.txt"
     )
-    asr_brain.evaluate(test_other_set)
+    # asr_brain.evaluate(test_other_set)
