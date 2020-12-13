@@ -172,7 +172,7 @@ class ASR(sb.core.Brain):
         (loss / self.hparams.gradient_accumulation).backward()
 
         if self.step % self.hparams.gradient_accumulation == 0:
-            # gradient clipping & early stop if loss is not finite
+            # gradient clipping & early stop if loss is not fini
             self.check_gradients(loss)
 
             self.optimizer.step()

@@ -187,7 +187,7 @@ def parse_arguments(arg_list):
 
     # overwrite rank and device in yaml
     if parsed_args["local_rank"] is not None:
-        parsed_args["device"] = parsed_args["local_rank"]
+        parsed_args["device"] = "cuda:{}".format(parsed_args["local_rank"])
 
         # avoid parsing "local_rank" to the yaml file
         del parsed_args["local_rank"]
