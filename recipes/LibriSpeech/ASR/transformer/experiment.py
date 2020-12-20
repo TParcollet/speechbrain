@@ -59,8 +59,8 @@ class ASR(sb.core.Brain):
                 target_word_lens = torch.cat(
                     [target_word_lens, target_word_lens]
                 )
-            if hasattr(self.hparams, "augmentation"):
-                wavs = self.hparams.augmentation(wavs, wav_lens)
+            # if hasattr(self.hparams, "augmentation"):
+            #     wavs = self.hparams.augmentation(wavs, wav_lens)
 
         # Prepare labels
         target_tokens, target_tokens_len = self.hparams.tokenizer(
@@ -76,6 +76,9 @@ class ASR(sb.core.Brain):
         feats = self.hparams.compute_features(wavs)
         current_epoch = self.hparams.epoch_counter.current
         feats = self.hparams.normalize(feats, wav_lens, epoch=current_epoch)
+
+        if hasattr(self.hparams, "augmentation"):
+            feats, _ = self.hparams.augmentation(feats)
 
         src = self.hparams.CNN(feats)
         enc_out, pred = self.hparams.Transformer(
