@@ -22,13 +22,14 @@ class RNNLM(nn.Module):
         Number of entries in embedding table, also the number of neurons in
         output layer.
     embedding_dim : int
-        Size of embedding vectors (default 128).
+        Default : 128
+        Size of embedding vectors.
     activation : torch class
-        A class used for constructing the activation layers for DNN.
+        A class used for constructing the activation layers. For dnn.
     dropout : float
-        Neuron dropout rate applied to embedding, RNN, and DNN.
+        Neuron dropout rate, applied to embedding, rnn, and dnn.
     rnn_class : torch class
-        The type of RNN to use in RNNLM network (LiGRU, LSTM, GRU, RNN)
+        The type of rnn to use in RNNLM network (LiGRU, LSTM, GRU, RNN)
     rnn_layers : int
         The number of recurrent layers to include.
     rnn_neurons : int
@@ -36,7 +37,8 @@ class RNNLM(nn.Module):
     rnn_re_init : bool
         Whether to initialize rnn with orthogonal initialization.
     rnn_return_hidden : bool
-        Whether to return hidden states (default True).
+        Default : True
+        Whether to return hidden states.
     dnn_blocks : int
         The number of linear neural blocks to include.
     dnn_neurons : int

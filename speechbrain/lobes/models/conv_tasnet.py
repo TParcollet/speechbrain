@@ -9,14 +9,14 @@ EPS = 1e-8
 
 
 class Encoder(nn.Module):
-    """This class learns the adaptive frontend for the ConvTasnet model.
+    """This class learns the adaptive frontend for the ConvTasnet model
 
     Arguments
     ---------
     L : int
-        The filter kernel size. Needs to be an odd number.
+        The filter kernel size, needs to an odd number
     N : int
-        Number of dimensions at the output of the adaptive front end.
+        number of dimensions at the output of the adaptive front end.
 
     Example
     -------
@@ -44,12 +44,12 @@ class Encoder(nn.Module):
         Arguments
         ---------
         mixture : Tensor
-            Tesor shape is [M, T]. M is batch size. T is #samples
+            shape is [M, T], M is batch size, T is #samples
 
         Returns
         -------
         mixture_w : Tensor
-            Tensor shape is [M, K, N], where K = (T-L)/(L/2)+1 = 2T/L-1
+            shape is [M, K, N], where K = (T-L)/(L/2)+1 = 2T/L-1
         """
         mixture = torch.unsqueeze(mixture, -1)  # [M, T, 1]
         conv_out = self.conv1d_U(mixture)
@@ -58,15 +58,15 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    """This class implements the decoder for the ConvTasnet.
-
+    """
+    This class implements the decoder for the ConvTasnet.
     The separated source embeddings are fed to the decoder to reconstruct
     the estimated sources in the time domain.
 
     Arguments
     ---------
     L : int
-        Number of bases to use when reconstructing.
+        Number of bases to use when reconstructing
 
     Example
     -------
@@ -95,14 +95,14 @@ class Decoder(nn.Module):
         Arguments
         ---------
         mixture_w : Tensor
-            Tensor shape is [M, K, N].
+            shape is [M, K, N]
         est_mask : Tensor
-            Tensor shape is [M, K, C, N].
+            shape is [M, K, C, N]
 
         Returns
         -------
         est_source : Tensor
-            Tensor shape is [M, T, C].
+            shape is [M, T, C]
         """
         # D = W * M
         source_w = (
@@ -124,19 +124,19 @@ class TemporalBlocksSequential(sb.nnet.containers.Sequential):
     Arguments
     ---------
     input_shape : tuple
-        Expected shape of the input.
+        Expected shape of the input
     H : int
-        The number of intermediate channels.
+        the number of intermediate channels
     P : int
-        The kernel size in the convolutions.
+        the kernel size in the convolutions
     R : int
-        The number of times to replicate the multilayer Temporal Blocks.
+        the number of times to replicate the multilayer Temporal Blocks
     X : int
-        The number of layers of Temporal Blocks with different dilations.
+        The number of layers of Temporal Blocks with different dilations
     norm type : str
-        The type of normalization, in ['gLN', 'cLN'].
+        the type of normalization, in ['gLN', 'cLN']
     causal : bool
-        To use causal or non-causal convolutions, in [True, False].
+        to use causal or non-causal convolutions, in [True, False]
 
     Example
     -------
@@ -173,25 +173,25 @@ class MaskNet(nn.Module):
     Arguments
     ---------
     N : int
-        Number of filters in autoencoder.
+        Number of filters in autoencoder
     B : int
-        Number of channels in bottleneck 1 × 1-conv block.
+        Number of channels in bottleneck 1 × 1-conv block
     H : int
-        Number of channels in convolutional blocks.
+        Number of channels in convolutional blocks
     P : int
-        Kernel size in convolutional blocks.
+        Kernel size in convolutional blocks
     X : int
-        Number of convolutional blocks in each repeat.
+        Number of convolutional blocks in each repeat
     R : int
-        Number of repeats.
+        Number of repeats
     C : int
-        Number of speakers.
+        Number of speakers
     norm_type : str
-        One of BN, gLN, cLN.
+        one of BN, gLN, cLN
     causal : bool
-        Causal or non-causal.
+        causal or non-causal
     mask_nonlinear : str
-        Use which non-linear function to generate mask, in ['softmax', 'relu'].
+        use which non-linear function to generate mask, in ['softmax', 'relu']
 
     Example:
     ---------
@@ -243,17 +243,18 @@ class MaskNet(nn.Module):
         )
 
     def forward(self, mixture_w):
-        """Keep this API same with TasNet.
+        """
+        Keep this API same with TasNet
 
         Arguments
         ---------
         mixture_w : Tensor
-            Tensor shape is [M, K, N], M is batch size.
+            shape is [M, K, N], M is batch size
 
         Returns
         -------
         est_mask : Tensor
-            Tensor shape is [M, K, C, N].
+            shape is [M, K, C, N]
         """
         mixture_w = mixture_w.permute(0, 2, 1)
         M, K, N = mixture_w.size()
@@ -280,27 +281,28 @@ class MaskNet(nn.Module):
 
 
 class TemporalBlock(torch.nn.Module):
-    """The conv1d compound layers used in Masknet.
+    """
+    The conv1d compound layers used in Masknet
 
     Arguments
     ---------
     input_shape : tuple
-        The expected shape of the input.
+        The expected shape of the input
     out_channels : int
-        The number of intermediate channels.
+        the number of intermediate channels
     kernel_size : int
-        The kernel size in the convolutions.
+        the kernel size in the convolutions
     stride : int
-        Convolution stride in convolutional layers.
+        convolution stride in convolutional layers
     padding : str
-        The type of padding in the convolutional layers,
+        the type of padding in the convolutional layers,
         (same, valid, causal). If "valid", no padding is performed.
     dilation : int
-        Amount of dilation in convolutional layers.
+        amount of dilation in convolutional layers
     norm type : str
-        The type of normalization, in ['gLN', 'cLN'].
+        the type of normalization, in ['gLN', 'cLN']
     causal : bool
-        To use causal or non-causal convolutions, in [True, False].
+        to use causal or non-causal convolutions, in [True, False]
 
     Example:
     ---------
@@ -358,12 +360,12 @@ class TemporalBlock(torch.nn.Module):
         Arguments
         ---------
         x : Tensor
-            Tensor shape is [M, K, B].
+            shape is [M, K, B]
 
         Returns
         -------
         x : Tensor
-            Tensor shape is [M, K, B].
+            shape is [M, K, B]
         """
         residual = x
         x = self.layers(x)
@@ -371,27 +373,28 @@ class TemporalBlock(torch.nn.Module):
 
 
 class DepthwiseSeparableConv(sb.nnet.containers.Sequential):
-    """Building block for the Temporal Blocks of Masknet in ConvTasNet.
+    """
+    Building block for the Temporal Blocks of Masknet in ConvTasNet
 
     Arguments
     ---------
     input_shape : tuple
         Expected shape of the input.
     out_channels : int
-        Number of output channels.
+        number of output channels.
     kernel_size : int
-        The kernel size in the convolutions.
+        the kernel size in the convolutions
     stride : int
-        Convolution stride in convolutional layers.
+        convolution stride in convolutional layers
     padding : str
-        The type of padding in the convolutional layers,
+        the type of padding in the convolutional layers,
         (same, valid, causal). If "valid", no padding is performed.
     dilation : int
-        Amount of dilation in convolutional layers.
+        amount of dilation in convolutional layers
     norm type : str
-        The type of normalization, in ['gLN', 'cLN'].
+        the type of normalization, in ['gLN', 'cLN']
     causal : bool
-        To use causal or non-causal convolutions, in [True, False].
+        to use causal or non-causal convolutions, in [True, False]
 
     Example
     -------
@@ -449,14 +452,13 @@ class DepthwiseSeparableConv(sb.nnet.containers.Sequential):
 
 class Chomp1d(nn.Module):
     """This class cuts out a portion of the signal from the end.
-
     It is written as a class to be able to incorporate it inside a sequential
     wrapper.
 
     Arguments
     ---------
     chomp_size : int
-        The size of the portion to discard (in samples).
+        The size of the portion to discard. (in samples)
 
     Example
     -------
@@ -475,32 +477,32 @@ class Chomp1d(nn.Module):
         """
         Arguments
         x : Tensor
-            Tensor shape is [M, Kpad, H].
+            shape is [M, Kpad, H]
 
         Returns
         -------
         x : Tensor
-            Tensor shape is [M, K, H].
+            shape is [M, K, H]
         """
         return x[:, : -self.chomp_size, :].contiguous()
 
 
 def choose_norm(norm_type, channel_size):
-    """This function returns the chosen normalization type.
+    """
+    This function returns the chosen normalization type
 
     Arguments
     ---------
     norm_type : str
-        One of ['gLN', 'cLN', 'batchnorm'].
+        one of ['gLN', 'cLN', 'batchnorm']
     channel_size : int
-        Number of channels.
+        number of channels
 
     Example
     -------
     >>> choose_norm('gLN', 10)
     GlobalLayerNorm()
     """
-
     if norm_type == "gLN":
         return GlobalLayerNorm(channel_size)
     elif norm_type == "cLN":
@@ -510,12 +512,13 @@ def choose_norm(norm_type, channel_size):
 
 
 class ChannelwiseLayerNorm(nn.Module):
-    """Channel-wise Layer Normalization (cLN).
+    """
+    Channel-wise Layer Normalization (cLN)
 
     Arguments
     ---------
     channel_size : int
-        Number of channels in the normalization dimension (the third dimension).
+        number of channels in the normalization dimension (the third dimension)
 
     Example
     -------
@@ -550,12 +553,13 @@ class ChannelwiseLayerNorm(nn.Module):
 
 
 class GlobalLayerNorm(nn.Module):
-    """Global Layer Normalization (gLN).
+    """
+    Global Layer Normalization (gLN)
 
     Arguments
     ---------
     channel_size : int
-        Number of channels in the third dimension.
+        number of channels in the third dimension
 
     Example
     -------
@@ -578,15 +582,10 @@ class GlobalLayerNorm(nn.Module):
 
     def forward(self, y):
         """
-        Arguments
-        ---------
-        y : Tensor
-            Tensor shape [M, K, N]. M is batch size, N is channel size, and K is length.
-
-        Returns
-        -------
-        gLN_y : Tensor
-            Tensor shape [M, K. N]
+        Args:
+            y: [M, K, N], M is batch size, N is channel size, K is length
+        Returns:
+            gLN_y: [M, K. N]
         """
         mean = y.mean(dim=1, keepdim=True).mean(
             dim=2, keepdim=True

@@ -1,4 +1,4 @@
-"""Transformer implementaion in the SpeechBrain sytle.
+"""Transformer implementaion in the SpeechBrain sytle
 
 Authors
 * Jianyuan Zhong 2020
@@ -25,24 +25,24 @@ class TransformerInterface(nn.Module):
     Arguments
     ----------
     d_model : int
-        The number of expected features in the encoder/decoder inputs (default=512).
+        the number of expected features in the encoder/decoder inputs (default=512).
     nhead : int
-        The number of heads in the multi-head attention models (default=8).
+        the number of heads in the multiheadattention models (default=8).
     num_encoder_layers : int
-        The number of sub-encoder-layers in the encoder (default=6).
+        the number of sub-encoder-layers in the encoder (default=6).
     num_decoder_layers : int
-        The number of sub-decoder-layers in the decoder (default=6).
+        the number of sub-decoder-layers in the decoder (default=6).
     dim_ffn : int
-        The dimension of the feedforward network model (default=2048).
+        the dimension of the feedforward network model (default=2048).
     dropout : int
-        The dropout value (default=0.1).
+        the dropout value (default=0.1).
     activation : torch class
-        The activation function of encoder/decoder intermediate layer,
-        e.g., relu or gelu (default=relu)
+        the activation function of encoder/decoder intermediate layer,
+        e.g. relu or gelu (default=relu)
     custom_src_module : torch class
-        Module that processes the src features to expected feature dim.
+        module that processes the src features to expected feature dim
     custom_tgt_module : torch class
-        Module that processes the src features to expected feature dim.
+        module that processes the src features to expected feature dim
     """
 
     def __init__(
@@ -121,21 +121,21 @@ class TransformerInterface(nn.Module):
             )
 
     def forward(self, **kwags):
-        """Users should modify this function according to their own tasks.
+        """Users should modify this function according to their own tasks
         """
         raise NotImplementedError
 
 
 class PositionalEncoding(nn.Module):
-    """This class implements the positional encoding function.
+    """This class implements the positional encoding function
 
     PE(pos, 2i)   = sin(pos/(10000^(2i/dmodel)))
     PE(pos, 2i+1) = cos(pos/(10000^(2i/dmodel)))
 
-    Arguments
-    ---------
-    max_len : int
-        Max length of the input sequences (default 2500).
+    Arguements
+    ----------
+    max_len :
+        max length of the input sequences (default 2500)
 
     Example
     -------
@@ -163,33 +163,33 @@ class PositionalEncoding(nn.Module):
 
     def forward(self, x):
         """
-        Arguments
-        ---------
-        x : tensor
-            Input feature shape (batch, time, fea)
+        Arguements
+        ----------
+        x : Tensor
+            input feature (batch, time, fea)
         """
         return self.pe[:, : x.size(1)].clone().detach()
 
 
 class TransformerEncoderLayer(nn.Module):
-    """This is an implementation of self-attention encoder layer.
+    """ This is an implementation of self-attention encoder layer
 
     Arguements
     ----------
     d_ffn : int
-        Hidden size of self-attention Feed Forward layer.
+        Hidden size of self-attention Feed Forward layer
     nhead : int
-        Number of attention heads.
+        number of attention heads
     d_model : int
-        The expected size of the input embedding.
+        The expected size of the input embedding
     reshape : bool
-        Whether to automatically shape 4-d input to 3-d.
+        Whether to automatically shape 4-d input to 3-d
     kdim : int
-        Dimension of the key (Optional).
+        dimension of the key (Optional)
     vdim : int
-        Dimension of the value (Optional).
-    dropout : float
-        Dropout for the encoder (Optional).
+        dimension of the value (Optional)
+    dropout : int
+        dropout for the encoder (Optional)
 
     Example
     -------
@@ -240,12 +240,12 @@ class TransformerEncoderLayer(nn.Module):
         """
         Arguements
         ----------
-        src : tensor
-            The sequence to the encoder layer (required).
-        src_mask : tensor
-            The mask for the src sequence (optional).
-        src_key_padding_mask : tensor
-            The mask for the src keys per batch (optional).
+        src: tensor
+            the sequence to the encoder layer (required).
+        src_mask: tensor
+            the mask for the src sequence (optional).
+        src_key_padding_mask: tensor
+            the mask for the src keys per batch (optional).
         """
         if self.normalize_before:
             src1 = self.norm1(src)
@@ -280,29 +280,29 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    """This class implements the transformer encoder.
+    """This class implements the transformer encoder
 
     Arguments
-    ---------
+    ----------
     num_layers : int
-        Number of transformer layers to include.
+        Number of transformer layers to include
     nhead : int
-        Number of attention heads.
+        number of attention heads
     d_ffn : int
-        Hidden size of self-attention Feed Forward layer.
+        Hidden size of self-attention Feed Forward layer
     input_shape : tuple
         Expected shape of an example input.
     d_model : int
         The dimension of the input embedding.
     kdim : int
-        Dimension for key (Optional).
+        dimension for key (Optional)
     vdim : int
-        Dimension for value (Optional).
+        dimension for value (Optional)
     dropout : float
-        Dropout for the encoder (Optional).
+        dropout for the encoder (Optional)
     input_module: torch class
-        The module to process the source input feature to expected
-        feature dimension (Optional).
+        the module to process the source input feature to expected
+        feature dimension (Optional)
 
     Example
     -------
@@ -362,14 +362,14 @@ class TransformerEncoder(nn.Module):
         src_key_padding_mask: Optional[torch.Tensor] = None,
     ):
         """
-        Arguments
+        Arguements
         ----------
-        src : tensor
-            The sequence to the encoder layer (required).
-        src_mask : tensor
-            The mask for the src sequence (optional).
-        src_key_padding_mask : tensor
-            The mask for the src keys per batch (optional).
+        src: tensor
+            the sequence to the encoder layer (required).
+        src_mask: tensor
+            the mask for the src sequence (optional).
+        src_key_padding_mask: tensor
+            the mask for the src keys per batch (optional).
         """
         output = src
         attention_lst = []
@@ -386,22 +386,22 @@ class TransformerEncoder(nn.Module):
 
 
 class TransformerDecoderLayer(nn.Module):
-    """This class implements the self-attention decoder layer.
+    """This class implements the self-attention decoder layer
 
     Arguments
     ----------
     d_ffn : int
-        Hidden size of self-attention Feed Forward layer.
+        Hidden size of self-attention Feed Forward layer
     nhead : int
-        Number of attention heads.
+        number of attention heads
     d_model : int
-        Dimension of the model.
+        dimension of the model
     kdim : int
-        Dimension for key (optional).
+        dimension for key (optional)
     vdim : int
-        Dimension for value (optional).
+        dimension for value (optional)
     dropout : float
-        Dropout for the decoder (optional).
+        dropout for the decoder (optional)
 
     Example
     -------
@@ -461,17 +461,17 @@ class TransformerDecoderLayer(nn.Module):
         Arguements
         ----------
         tgt: tensor
-            The sequence to the decoder layer (required).
+            the sequence to the decoder layer (required).
         memory: tensor
-            The sequence from the last layer of the encoder (required).
+            the sequence from the last layer of the encoder (required).
         tgt_mask: tensor
-            The mask for the tgt sequence (optional).
+            the mask for the tgt sequence (optional).
         memory_mask: tensor
-            The mask for the memory sequence (optional).
+            the mask for the memory sequence (optional).
         tgt_key_padding_mask: tensor
-            The mask for the tgt keys per batch (optional).
+            the mask for the tgt keys per batch (optional).
         memory_key_padding_mask: tensor
-            The mask for the memory keys per batch (optional).
+            the mask for the memory keys per batch (optional).
         """
         if self.normalize_before:
             tgt1 = self.norm1(tgt)
@@ -527,22 +527,22 @@ class TransformerDecoderLayer(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    """This class implements the Transformer decoder.
+    """This class implements the Transformer decoder
 
     Arguments
     ----------
     d_ffn : int
-        Hidden size of self-attention Feed Forward layer.
+        Hidden size of self-attention Feed Forward layer
     nhead : int
-        Number of attention heads.
+        number of attention heads
     d_model : int
-        Dimension of the model.
+        dimension of the model
     kdim : int
-        Dimension for key (Optional).
+        dimension for key (Optional)
     vdim : int
-        Dimension for value (Optional).
+        dimension for value (Optional)
     dropout : float
-        Dropout for the decoder (Optional).
+        dropout for the decoder (Optional)
 
     Example
     -------
@@ -596,18 +596,18 @@ class TransformerDecoder(nn.Module):
         """
         Arguments
         ----------
-        tgt : tensor
-            The sequence to the decoder layer (required).
-        memory : tensor
-            The sequence from the last layer of the encoder (required).
-        tgt_mask : tensor
-            The mask for the tgt sequence (optional).
-        memory_mask : tensor
-            The mask for the memory sequence (optional).
-        tgt_key_padding_mask : tensor
-            The mask for the tgt keys per batch (optional).
-        memory_key_padding_mask : tensor
-            The mask for the memory keys per batch (optional).
+        tgt: tensor
+            the sequence to the decoder layer (required).
+        memory: tensor
+            the sequence from the last layer of the encoder (required).
+        tgt_mask: tensor
+            the mask for the tgt sequence (optional).
+        memory_mask: tensor
+            the mask for the memory sequence (optional).
+        tgt_key_padding_mask: tensor
+            the mask for the tgt keys per batch (optional).
+        memory_key_padding_mask: tensor
+            the mask for the memory keys per batch (optional).
         """
         output = tgt
         self_attns, multihead_attns = [], []
@@ -629,17 +629,16 @@ class TransformerDecoder(nn.Module):
 
 class NormalizedEmbedding(nn.Module):
     """This class implements the normalized embedding layer for the transformer.
-
     Since the dot product of the self-attention is always normalized by sqrt(d_model)
     and the final linear projection for prediction shares weight with the embedding layer,
-    we multiply the output of the embedding by sqrt(d_model).
+    we multiply the output of the embedding by sqrt(d_model)
 
     Arguments
     ---------
     d_model: int
-        The number of expected features in the encoder/decoder inputs (default=512).
+        the number of expected features in the encoder/decoder inputs (default=512).
     vocab: int
-        The vocab size.
+        the vocab size
 
     Example
     -------
@@ -660,14 +659,14 @@ class NormalizedEmbedding(nn.Module):
 
 
 def get_key_padding_mask(padded_input, pad_idx):
-    """Creates a binary mask to prevent attention to padded locations.
+    """Creates a binary mask to prevent attention to padded locations
 
     Arguements
     ----------
     padded_input: int
-        Padded input.
+        padded input
     pad_idx:
-        idx for padding element.
+        idx for padding element
 
     Example
     -------
@@ -695,10 +694,9 @@ def get_key_padding_mask(padded_input, pad_idx):
 def get_lookahead_mask(padded_input):
     """Creates a binary mask for each sequence.
 
-    Arguments
-    ---------
+    Arguements
+    ----------
     padded_input : tensor
-        Padded input tensor.
 
     Example
     -------

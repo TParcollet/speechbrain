@@ -1,5 +1,4 @@
 """This lobes replicate the encoder first introduced in ESPNET v1
-
 source: https://github.com/espnet/espnet/blob/master/espnet/nets/pytorch_backend/rnn/encoders.py
 
 Authors
@@ -18,13 +17,13 @@ class ESPnetVGG(sb.nnet.containers.Sequential):
     input_shape : tuple
         The shape of an example expected input.
     activation : torch class
-        A class used for constructing the activation layers. For CNN and DNN.
+        A class used for constructing the activation layers. For cnn and dnn.
     dropout : float
-        Neuron dropout rate, applied to RNN only.
+        Neuron dropout rate, applied to rnn only.
     cnn_channels : list of ints
-        A list of the number of output channels for each CNN block.
+        A list of the number of output channels for each cnn block.
     rnn_class : torch class
-        The type of RNN to use (LiGRU, LSTM, GRU, RNN)
+        The type of rnn to use (LiGRU, LSTM, GRU, RNN)
     rnn_layers : int
         The number of recurrent layers to include.
     rnn_neurons : int

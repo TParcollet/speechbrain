@@ -1,4 +1,4 @@
-"""Conformer implementaion in the SpeechBrain sytle.
+"""Conformer implementaion in the SpeechBrain sytle
 
 Authors
 * Jianyuan Zhong 2020
@@ -17,18 +17,18 @@ from speechbrain.nnet.activations import Swish
 
 
 class ConvolutionModule(nn.Module):
-    """This is an implementation of convolution module in Conformer.
+    """ This is an implementation of convolution module in Conformer
 
     Arguments
     ----------
     input_size : int
-        The expected size of the input embedding.
+        The expected size of the input embedding
     dropout : int
-        Dropout for the encoder (Optional).
+        dropout for the encoder (Optional)
     bias: bool
-        Bias to convolution module.
+        bias to convolution module
     kernel_size: int
-        Kernel size of convolution model.
+        kernel size of convolution model
 
     Example
     -------
@@ -80,28 +80,28 @@ class ConvolutionModule(nn.Module):
 
 
 class ConformerEncoderLayer(nn.Module):
-    """This is an implementation of Conformer encoder layer.
+    """ This is an implementation of Conformer encoder layer
 
     Arguments
     ----------
     d_ffn : int
-        Hidden size of self-attention Feed Forward layer.
+        Hidden size of self-attention Feed Forward layer
     nhead : int
-        Number of attention heads.
+        number of attention heads
     d_model : int
-        The expected size of the input embedding.
+        The expected size of the input embedding
     reshape : bool
-        Whether to automatically shape 4-d input to 3-d.
+        Whether to automatically shape 4-d input to 3-d
     kdim : int
-        Dimension of the key (Optional).
+        dimension of the key (Optional)
     vdim : int
-        Dimension of the value (Optional).
+        dimension of the value (Optional)
     dropout : int
-        Dropout for the encoder (Optional).
-    bias : bool
-        Bias to convolution module.
-    kernel_size : int
-        Kernel size of convolution model.
+        dropout for the encoder (Optional)
+    bias: bool
+        bias to convolution module
+    kernel_size: int
+        kernel size of convolution model
 
     Example
     -------
@@ -175,29 +175,29 @@ class ConformerEncoderLayer(nn.Module):
 
 
 class ConformerEncoder(nn.Module):
-    """This class implements the Conformer encoder.
+    """This class implements the Conformer encoder
 
     Arguments
-    ---------
+    ----------
     num_layers : int
-        Number of Conformer layers to include.
+        Number of Conformer layers to include
     nhead : int
-        Number of attention heads.
+        number of attention heads
     d_ffn : int
-        Hidden size of self-attention Feed Forward layer.
+        Hidden size of self-attention Feed Forward layer
     input_shape : tuple
         Expected shape of an example input.
     d_model : int
         The dimension of the input embedding.
     kdim : int
-        Dimension for key (Optional).
+        dimension for key (Optional)
     vdim : int
-        Dimension for value (Optional).
+        dimension for value (Optional)
     dropout : float
-        Dropout for the encoder (Optional).
-    input_module : torch class
-        The module to process the source input feature to expected
-        feature dimension (Optional).
+        dropout for the encoder (Optional)
+    input_module: torch class
+        the module to process the source input feature to expected
+        feature dimension (Optional)
 
     Example
     -------
@@ -259,14 +259,14 @@ class ConformerEncoder(nn.Module):
         src_key_padding_mask: Optional[torch.Tensor] = None,
     ):
         """
-        Arguments
+        Arguements
         ----------
-        src : tensor
-            The sequence to the encoder layer (required).
-        src_mask : tensor
-            The mask for the src sequence (optional).
-        src_key_padding_mask : tensor
-            The mask for the src keys per batch (optional).
+        src: tensor
+            the sequence to the encoder layer (required).
+        src_mask: tensor
+            the mask for the src sequence (optional).
+        src_key_padding_mask: tensor
+            the mask for the src keys per batch (optional).
         """
         output = src
         attention_lst = []
