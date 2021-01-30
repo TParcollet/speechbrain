@@ -40,6 +40,7 @@ from speechbrain.utils.data_utils import download_file
 from speechbrain.utils.distributed import run_on_main
 from hyperpyyaml import load_hyperpyyaml
 from pathlib import Path
+import sentencepiece as spm
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,9 @@ def dataio_prepare(hparams):
 
     # Defining tokenizer and loading it
     # To avoid mismatch, we have to use the same tokenizer used for LM training
-    tokenizer = hparams["lm_model"].tokenizer
+    # tokenizer = hparams["lm_model"].tokenizer
+    tokenizer = spm.SentencePieceProcessor()
+    tokenizer.load(save_model_path)
 
     # 2. Define audio pipeline:
     @sb.utils.data_pipeline.takes("wav")
@@ -345,8 +348,8 @@ if __name__ == "__main__":
     asr_brain.tokenizer = tokenizer
 
     # if a language model is specified it is loaded
-    if hasattr(asr_brain.hparams, "language_model_file"):
-        asr_brain.load_lm()
+    # if hasattr(asr_brain.hparams, "language_model_file"):
+    #    asr_brain.load_lm()
 
     # Training
     asr_brain.fit(
