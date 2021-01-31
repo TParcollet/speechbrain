@@ -440,7 +440,12 @@ class S2SBeamSearcher(S2SBaseSearcher):
         # True if not exceed limit
         # Multiplication equals to element-wise and for tensor
         cond = (lt_cond * mt_cond).unsqueeze(1)
-        return cond, attn_peak
+        return (
+            cond,
+            attn_peak,
+            torch.min(prev_attn_peak - self.max_attn_shift),
+            torch.max(prev_attn_peak + self.max_attn_shift),
+        )
 
     def _check_eos_threshold(self, log_probs):
         """
@@ -633,7 +638,9 @@ class S2SBeamSearcher(S2SBaseSearcher):
 
             if self.using_max_attn_shift:
                 # Block the candidates that exceed the max shift
-                cond, attn_peak = self._check_attn_shift(attn, prev_attn_peak)
+                cond, attn_peak, min_pos, max_pos = self._check_attn_shift(
+                    attn, prev_attn_peak
+                )
                 log_probs = mask_by_condition(
                     log_probs, cond, fill_value=self.minus_inf
                 )
@@ -672,7 +679,7 @@ class S2SBeamSearcher(S2SBaseSearcher):
                 else:
                     ctc_candidates = None
                 ctc_log_probs, ctc_memory = ctc_scorer.forward_step(
-                    g, ctc_memory, ctc_candidates
+                    g, ctc_memory, ctc_candidates, min_pos, max_pos
                 )
                 log_probs = log_probs + self.ctc_weight * ctc_log_probs
 

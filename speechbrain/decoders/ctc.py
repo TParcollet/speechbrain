@@ -76,7 +76,7 @@ class CTCPrefixScorer:
             torch.arange(batch_size, device=self.device) * self.vocab_size
         )
 
-    def forward_step(self, g, state, candidates=None):
+    def forward_step(self, g, state, candidates=None, min_pos=-1, max_pos=-1):
         """This method if one step of forwarding operation
         for prefic ctc scorer.
 
@@ -186,8 +186,10 @@ class CTCPrefixScorer:
                 phi[:, i, last_char[i]] = r_prev[:, 1, i]
 
         # Define start, end, |g| < |h| for ctc decoding.
-        start = max(1, prefix_length)
-        end = self.max_enc_len
+        start = max(
+            max(1, prefix_length), int(min_pos.item())
+        )  # max(1, prefix_length)
+        end = min(self.max_enc_len, int(max_pos.item()))  # self.max_enc_len
 
         # Compute forward prob log(r_t^nb(h)) and log(r_t^b(h)):
         for t in range(start, end):
