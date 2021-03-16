@@ -24,7 +24,7 @@ class FairseqWav2Vec2(nn.Module):
 
     The model can be used as a fixed features extractor or can be finetuned. It
     will download automatically the model if a url is given (e.g FairSeq
-    repository).
+    repository from GitHub).
 
     Arguments
     ---------
